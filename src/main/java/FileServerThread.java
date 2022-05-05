@@ -170,7 +170,8 @@ public class FileServerThread extends Thread {
         }
 
         try {
-            if (!file.getParentFile().mkdirs() || file.createNewFile()) throw new IOException();
+            if ((!file.getParentFile().exists() && !file.getParentFile().mkdirs()) ||
+                    (!file.exists() && !file.createNewFile())) throw new IOException();
         } catch (IOException e) {
             throw new FileCreationException("Couldn't create " + parsedMessage.path);
         }
