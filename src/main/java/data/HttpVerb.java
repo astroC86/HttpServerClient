@@ -1,2 +1,5 @@
-package data;public class HttpVerb {
+package data;
+
+public enum HttpVerb {
+    GET, POST
 }

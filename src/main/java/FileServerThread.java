@@ -1,3 +1,8 @@
+import data.HttpVerb;
+import data.HttpMessage;
+import data.HttpMessageParser;
+import exceptions.MessageParsingException;
+
 import java.io.*;
 import java.net.Socket;
 import java.net.URLDecoder;
@@ -8,47 +13,10 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class FileServerThread extends Thread {
-    private enum HTTPVerb {GET, POST}
-
-    private static class ParsedMessage {
-        String path;
-        Map<String, String> headers;
-        int majorVersion;
-        int minorVersion;
-        HTTPVerb verb;
-
-        public ParsedMessage(String path, Map<String, String> headers, int majorVersion, int minorVersion, HTTPVerb verb) {
-            this.path = path;
-            this.headers = headers;
-            this.majorVersion = majorVersion;
-            this.minorVersion = minorVersion;
-            this.verb = verb;
-        }
-
-        @Override
-        public String toString() {
-            return "ParsedMessage{" +
-                    "path='" + path + '\'' +
-                    ", headers=" + headers +
-                    ", majorVersion=" + majorVersion +
-                    ", minorVersion=" + minorVersion +
-                    ", verb=" + verb +
-                    '}';
-        }
-    }
-
-    private static class MessageParsingException extends Exception {
-        public MessageParsingException(String message) {
-            super(message);
-        }
-    }
 
     private final Socket clientSocket;
     private final Logger logger;
@@ -77,12 +45,12 @@ public class FileServerThread extends Thread {
             }
 
             try {
-                ParsedMessage parsedMessage = parseMessage(lines);
+                HttpMessage parsedMessage = HttpMessageParser.parse(lines);
                 logger.log(Level.INFO, "parsedMessage: {0}", parsedMessage);
 
-                if (parsedMessage.verb == HTTPVerb.GET) {
+                if (parsedMessage.getVerb() == HttpVerb.GET) {
                     File file = new File("./server_content/" +
-                            URLDecoder.decode(parsedMessage.path, StandardCharsets.UTF_8));
+                            URLDecoder.decode(parsedMessage.getPath(), StandardCharsets.UTF_8));
 
                     if (!file.exists()) throw new FileNotFoundException(file.getAbsolutePath() + " doesn't exist.");
 
@@ -97,7 +65,7 @@ public class FileServerThread extends Thread {
 
                     // TODO: refactor this into a separate method
                     ZonedDateTime time = LocalDateTime.now().atZone(ZoneId.of("GMT")); // HTTP spec states this must be in GMT
-                    out.print("HTTP/" + parsedMessage.majorVersion + "." + parsedMessage.minorVersion + " 200 OK\r\n");
+                    out.print("HTTP/" + parsedMessage.getMajorVersion() + "." + parsedMessage.getMinorVersion() + " 200 OK\r\n");
                     out.print("Server: FileServer/0.0.1\r\n");
                     out.print("Date: " + DateTimeFormatter.RFC_1123_DATE_TIME.format(time) + "\r\n");
                     out.println("Content-Type: text/plain\r\n");
@@ -119,24 +87,5 @@ public class FileServerThread extends Thread {
         } catch (IOException e) {
             logger.log(Level.SEVERE, e.getMessage());
         }
-    }
-
-    // TODO: headers and the rest
-    private ParsedMessage parseMessage(ArrayList<String> lines) throws MessageParsingException {
-        final Pattern firstLinePattern = Pattern.compile("^(?<verb>GET|POST)\\s/(?<path>.*) HTTP/(?<version>\\d.\\d)$");
-        final Pattern headerPattern = Pattern.compile("^([a-zA-Z-_]*): (.*)$");
-
-        if (lines.isEmpty()) throw new MessageParsingException("Message is empty");
-        Matcher matcher = firstLinePattern.matcher(lines.get(0));
-        if (!matcher.matches())
-            throw new MessageParsingException("First line didn't match the anticipated format.");
-
-        HTTPVerb httpVerb = HTTPVerb.valueOf(matcher.group("verb"));
-        String path = matcher.group("path");
-        String httpVersion = matcher.group("version");
-        int httpMajorVersion = Integer.parseInt(httpVersion.split("\\.")[0]);
-        int httpMinorVersion = Integer.parseInt(httpVersion.split("\\.")[1]);
-
-        return new ParsedMessage(path, null, httpMajorVersion, httpMinorVersion, httpVerb);
     }
 }

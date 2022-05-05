@@ -1,2 +1,4 @@
-package store;public class heuristic {
+package store;
+
+public class Heuristic {
 }
