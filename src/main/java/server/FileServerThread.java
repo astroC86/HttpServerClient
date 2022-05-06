@@ -1,3 +1,12 @@
+package server;
+
+import data.HttpRequest;
+import data.parsers.HttpRequestParser;
+import data.HttpVerb;
+import exceptions.FileCreationException;
+import exceptions.FileRetrievalException;
+import exceptions.MessageParsingException;
+
 import java.io.*;
 import java.net.Socket;
 import java.net.URLDecoder;
@@ -6,57 +15,13 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.logging.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.zip.DataFormatException;
+import utils.Content;
+
+import static utils.Content.typeExtension;
 
 public class FileServerThread extends Thread {
-    private enum HTTPVerb {GET, POST}
 
-    private static class ParsedMessage {
-        String path;
-        Map<String, String> headers;
-        int majorVersion;
-        int minorVersion;
-        HTTPVerb verb;
-
-        public ParsedMessage(String path, Map<String, String> headers, int majorVersion, int minorVersion, HTTPVerb verb) {
-            this.path = path;
-            this.headers = headers;
-            this.majorVersion = majorVersion;
-            this.minorVersion = minorVersion;
-            this.verb = verb;
-        }
-
-        @Override
-        public String toString() {
-            return "ParsedMessage{" +
-                    "path='" + path + '\'' +
-                    ", headers=" + headers +
-                    ", majorVersion=" + majorVersion +
-                    ", minorVersion=" + minorVersion +
-                    ", verb=" + verb +
-                    '}';
-        }
-    }
-
-    private static class MessageParsingException extends Exception {
-        public MessageParsingException(String message) {
-            super(message);
-        }
-    }
-
-    private static class FileRetrievalException extends IOException {
-        public FileRetrievalException(String message) {
-            super(message);
-        }
-    }
-
-    private static class FileCreationException extends IOException {
-        public FileCreationException(String message) {
-            super(message);
-        }
-    }
 
     private static class SimpleFormatterWithThreadName extends SimpleFormatter {
         final String threadName;
@@ -114,19 +79,21 @@ public class FileServerThread extends Thread {
     private boolean respond(InputStream in, OutputStream binaryOut, PrintWriter out, ArrayList<String> lines) throws IOException {
         boolean persisting = true;
         try {
-            ParsedMessage parsedMessage = parseMessage(lines);
+            HttpRequest parsedMessage = HttpRequestParser.parse(lines);
             logger.log(Level.INFO, "parsedMessage: {0}", parsedMessage);
 
             // ignore requests that aren't HTTP/1.0 or HTTP/1.1
-            if (parsedMessage.majorVersion != 1 || parsedMessage.minorVersion > 1 )
+            if (parsedMessage.getMajorVersion() != 1 || parsedMessage.getMinorVersion() > 1 )
                 return false;
 
-            if (parsedMessage.minorVersion == 0) persisting = false;
+            if (parsedMessage.getMinorVersion() == 0) persisting = false;
 
-            if (parsedMessage.verb == HTTPVerb.GET) handleGET(out, parsedMessage, binaryOut);
+            if (parsedMessage.getVerb() == HttpVerb.GET) handleGET(out, parsedMessage, binaryOut);
             else handlePOST(in, out, parsedMessage);
-        } catch (MessageParsingException | FileNotFoundException | FileCreationException | FileRetrievalException |
-                 MissingFormatArgumentException | DataFormatException | NumberFormatException e) {
+        } catch (FileNotFoundException  | FileCreationException          |
+                 FileRetrievalException | MissingFormatArgumentException |
+                 DataFormatException    | NumberFormatException          |
+                 MessageParsingException e) {
             // TODO: why +1 and not +2? CRLF is 2 bytes not 1?!!!
             // TODO: what HTTP version to use in case of error?
             writePrelude(out, "1.0", "text/plain", e.getMessage().getBytes().length + 1, false);
@@ -135,45 +102,39 @@ public class FileServerThread extends Thread {
         return persisting;
     }
 
-    private void handlePOST(InputStream in, PrintWriter out, ParsedMessage parsedMessage) throws DataFormatException, IOException {
+    private void handlePOST(InputStream in, PrintWriter out, HttpRequest parsedMessage) throws DataFormatException, IOException {
         File file = new File("./server_content/" +
-                URLDecoder.decode(parsedMessage.path, StandardCharsets.UTF_8));
+                URLDecoder.decode(parsedMessage.getPath(), StandardCharsets.UTF_8));
 
-        Map<String, String> headers = parsedMessage.headers;
-        if (!headers.containsKey("content-length"))
+        if (parsedMessage.lookup("content-length").isEmpty())
             throw new MissingFormatArgumentException("Headers don't include Content-Length.");
-        if (!headers.containsKey("content-type"))
+        if (parsedMessage.lookup("content-type").isEmpty())
             throw new MissingFormatArgumentException("Headers don't include Content-Type.");
 
         // the following looks terrible, but it seems to be the safest and most efficient option.
         int contentLength;
-        try { contentLength = Integer.parseInt(headers.get("content-length")); }
+        try { contentLength = Integer.parseInt(parsedMessage.lookup("content-length").get()); }
         catch (NumberFormatException e) {
             throw new NumberFormatException("Content-Length is not an integer.");
         }
 
-        Map<String, String> contentTypeToExtension = new HashMap<>();
-        contentTypeToExtension.put("image/png", ".png");
-        contentTypeToExtension.put("text/html", ".html");
-        contentTypeToExtension.put("text/plain", ".txt");
-
-        String contentType = headers.get("content-type");
-        if (!contentTypeToExtension.containsKey(contentType)) {
+        String contentType = parsedMessage.lookup("content-type").get();
+        if (!typeExtension.containsKey(contentType)) {
             throw new DataFormatException("Acceptable Content-Type's: " +
-                    String.join(",", contentTypeToExtension.keySet()) + ".");
+                    String.join(",", typeExtension.keySet()) + ".");
         }
 
-        String expecetedExtension = contentTypeToExtension.get(contentType);
-        if (!parsedMessage.path.endsWith(expecetedExtension)) {
+        String expectedExtension = "."+typeExtension.get(contentType);
+        if (!parsedMessage.getPath().endsWith(expectedExtension)) {
             throw new DataFormatException("Content-Type is " + contentType +
-                    " , but the extension is not " + expecetedExtension + ".");
+                    " , but the extension is not " + expectedExtension + ".");
         }
 
         try {
             if ((!file.getParentFile().exists() && !file.getParentFile().mkdirs()) ||
                     (!file.exists() && !file.createNewFile())) throw new IOException();
         } catch (IOException e) {
-            throw new FileCreationException("Couldn't create " + parsedMessage.path);
+            throw new FileCreationException("Couldn't create " + parsedMessage.getPath());
         }
 
         try (
@@ -184,7 +145,7 @@ public class FileServerThread extends Thread {
         }
 
         String successMessage = "File " + file.getName() + " was successfully uploaded!";
-        writePrelude(out, parsedMessage.majorVersion + "." + parsedMessage.minorVersion, contentType, successMessage.getBytes().length + 1, true);
+        writePrelude(out, parsedMessage.getMajorVersion() + "." + parsedMessage.getMinorVersion(), contentType, successMessage.getBytes().length + 1, true);
         out.println(successMessage);
     }
 
@@ -203,9 +164,9 @@ public class FileServerThread extends Thread {
         return byteArrayOutputStream.toString();
     }
 
-    private void handleGET(PrintWriter out, ParsedMessage parsedMessage, OutputStream binaryOut) throws IOException {
+    private void handleGET(PrintWriter out, HttpRequest parsedMessage, OutputStream binaryOut) throws IOException {
         File file = new File("./server_content/" +
-                URLDecoder.decode(parsedMessage.path, StandardCharsets.UTF_8));
+                URLDecoder.decode(parsedMessage.getPath(), StandardCharsets.UTF_8));
 
         if (!file.exists()) throw new FileNotFoundException(file.getAbsolutePath() + " doesn't exist.");
 
@@ -217,7 +178,7 @@ public class FileServerThread extends Thread {
             throw new FileCreationException(e.getMessage());
         }
 
-        writePrelude(out, parsedMessage.majorVersion + "." + parsedMessage.minorVersion, "text/plain", fileLength, true);
+        writePrelude(out, parsedMessage.getMajorVersion() + "." + parsedMessage.getMinorVersion(), "text/plain", fileLength, true);
         binaryOut.write(data, 0, fileLength);
     }
 
@@ -225,41 +186,10 @@ public class FileServerThread extends Thread {
         if (success)
             out.println("HTTP/" + version + " 200 OK");
         else out.println("HTTP/1.0 404 Not Found");
-        out.println("Server: FileServer/0.0.1");
+        out.println("Server: server.FileServer/0.0.1");
         out.println("Date: " + DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now()));
         out.println("Content-Type: " + contentType);
         out.println("Content-Length: " + length);
         out.println();
-    }
-
-    private ParsedMessage parseMessage(ArrayList<String> lines) throws MessageParsingException {
-        final Pattern firstLinePattern = Pattern.compile("^(?<verb>GET|POST)\\s/(?<path>.*) HTTP/(?<version>\\d.\\d)$");
-
-        if (lines.isEmpty()) throw new MessageParsingException("Message is empty.");
-        Matcher firstLineMatcher = firstLinePattern.matcher(lines.get(0));
-        if (!firstLineMatcher.matches())
-            throw new MessageParsingException("First line didn't match the anticipated format.");
-
-        HTTPVerb httpVerb = HTTPVerb.valueOf(firstLineMatcher.group("verb"));
-        String path = firstLineMatcher.group("path");
-        String httpVersion = firstLineMatcher.group("version");
-        int httpMajorVersion = Integer.parseInt(httpVersion.split("\\.")[0]);
-        int httpMinorVersion = Integer.parseInt(httpVersion.split("\\.")[1]);
-
-        final Pattern headerPattern = Pattern.compile("^(?<key>[a-zA-Z-_]*): (?<val>.*)$");
-
-        Map<String, String> headers = new HashMap<>();
-        int i;
-        for (i = 1; i < lines.size(); i++) {
-            String line = lines.get(i);
-            if (line.isEmpty()) break;
-            Matcher headerMatcher = headerPattern.matcher(line);
-            if (!headerMatcher.matches()) throw new MessageParsingException("Couldn't parse header line: " + line);
-            String key = headerMatcher.group("key").toLowerCase();
-            String val = headerMatcher.group("val");
-            headers.put(key, val);
-        }
-
-        return new ParsedMessage(path, headers, httpMajorVersion, httpMinorVersion, httpVerb);
     }
 }
