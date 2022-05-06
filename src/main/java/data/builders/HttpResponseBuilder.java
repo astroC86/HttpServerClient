@@ -1,6 +1,5 @@
 package data.builders;
 
-import data.HTTPHeader;
 import data.HttpResponse;
 import data.HttpVersion;
 import data.MIMEType;
