@@ -3,18 +3,20 @@ package data;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public class HttpResponse {
     private final String CLRF = "\r\n";
     HttpVersion version;
 
-    private HashMap<String,String> headers =  new HashMap<>();
+    private Map<String,String> headers;
     private int statusCode;
     private String statusMessage;
     private byte[] body;
 
-    public HttpResponse(int major,int minor, int statusCode, String statusMessage, byte[] body) {
+    public HttpResponse(int major,int minor, int statusCode, String statusMessage, byte[] body, Map<String, String> headers) {
         this.version       = switch (major){
                                 case 1 -> switch (minor){
                                         case 1 -> HttpVersion.HTTP_1_1;
@@ -26,19 +28,24 @@ public class HttpResponse {
         this.statusCode    = statusCode;
         this.statusMessage = statusMessage;
         this.body = body;
+        this.headers = headers;
     }
 
-    public HttpResponse(HttpVersion version, int statusCode, String statusMessage, byte[] body) {
+    public HttpResponse(HttpVersion version, int statusCode, String statusMessage, byte[] body, Map<String, String> headers) {
         this.version       = version;
         this.statusCode    = statusCode;
         this.statusMessage = statusMessage;
         this.body = body;
+        this.headers = headers;
     }
 
     public void send(OutputStream out) throws IOException {
-        out.write(("HTTP/"+ version.toString()+CLRF).getBytes(StandardCharsets.US_ASCII));
+        out.write((version.toString()  + " " + statusCode + " " + statusMessage + CLRF).getBytes(StandardCharsets.US_ASCII));
         for (var kv: headers.entrySet()) {
-            out.write((kv.getKey()+": "+kv.getValue()+CLRF).getBytes(StandardCharsets.US_ASCII));
+            String key = Arrays.stream(kv.getKey().split("-"))
+                    .map(s -> Character.toUpperCase(s.charAt(0)) + s.substring(1))
+                    .collect(Collectors.joining("-"));
+            out.write((key + ": " + kv.getValue()+CLRF).getBytes(StandardCharsets.US_ASCII));
         }
         out.write(CLRF.getBytes(StandardCharsets.US_ASCII));
         out.write(this.body);

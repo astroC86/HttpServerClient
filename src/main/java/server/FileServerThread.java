@@ -1,22 +1,25 @@
 package server;
 
-import data.HttpRequest;
+import data.*;
+import data.builders.HttpResponseBuilder;
 import data.parsers.HttpRequestParser;
-import data.HttpVerb;
 import exceptions.FileCreationException;
 import exceptions.FileRetrievalException;
 import exceptions.MessageParsingException;
 
 import java.io.*;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.logging.*;
 import java.util.zip.DataFormatException;
-import utils.Content;
 
 import static utils.Content.typeExtension;
 
@@ -25,6 +28,7 @@ public class FileServerThread extends Thread {
 
     private static class SimpleFormatterWithThreadName extends SimpleFormatter {
         final String threadName;
+
         public SimpleFormatterWithThreadName(String threadName) {
             this.threadName = threadName;
         }
@@ -37,9 +41,13 @@ public class FileServerThread extends Thread {
 
     private final Socket clientSocket;
     private final Logger logger;
+    private final Runnable callback;
+    private Supplier<Integer> timeoutSupplier;
 
-    FileServerThread(Socket clientSocket, String threadName) {
+    FileServerThread(Socket clientSocket, String threadName, Runnable callback, Supplier<Integer> timeoutSupplier) {
         this.clientSocket = clientSocket;
+        this.callback = callback;
+        this.timeoutSupplier = timeoutSupplier;
         this.setName(threadName);
 
         this.logger = Logger.getLogger(threadName);
@@ -54,13 +62,13 @@ public class FileServerThread extends Thread {
     public void run() {
         try (
                 InputStream in = clientSocket.getInputStream();
-                OutputStream binaryOut = clientSocket.getOutputStream();
-                PrintWriter out = new PrintWriter(binaryOut, true)
+                OutputStream binaryOut = clientSocket.getOutputStream()
         ) {
             boolean persisting = true;
             while (persisting) {
                 ArrayList<String> lines = new ArrayList<>();
                 while (true) {
+                    clientSocket.setSoTimeout(timeoutSupplier.get()); // SocketTimeoutException <: IOException
                     String line = readLine(in);
                     if (line == null) return; // end of stream
                     if (line.isEmpty()) break; //RFC 2616 dictates that nothing precedes CRLF
@@ -69,62 +77,92 @@ public class FileServerThread extends Thread {
 
                 logger.log(Level.INFO, "input:\n  {0}", String.join("\n  ", lines));
 
-                persisting = respond(in, binaryOut, out, lines);
+                persisting = respond(in, binaryOut, lines);
             }
+        } catch (SocketTimeoutException e) {
+            logger.log(Level.INFO, e.getMessage());
         } catch (IOException e) {
             logger.log(Level.SEVERE, e.getMessage());
         }
+
+        callback.run();
     }
 
-    private boolean respond(InputStream in, OutputStream binaryOut, PrintWriter out, ArrayList<String> lines) throws IOException {
+    private boolean respond(InputStream in, OutputStream binaryOut, ArrayList<String> lines) throws IOException {
         boolean persisting = true;
         try {
             HttpRequest parsedMessage = HttpRequestParser.parse(lines);
             logger.log(Level.INFO, "parsedMessage: {0}", parsedMessage);
 
             // ignore requests that aren't HTTP/1.0 or HTTP/1.1
-            if (parsedMessage.getMajorVersion() != 1 || parsedMessage.getMinorVersion() > 1 )
+            if (parsedMessage.getMajorVersion() != 1 || parsedMessage.getMinorVersion() > 1)
                 return false;
 
-            if (parsedMessage.getMinorVersion() == 0) persisting = false;
+            HttpVersion version = switch (parsedMessage.getMajorVersion() + "." + parsedMessage.getMinorVersion()) {
+                case "1.1" -> HttpVersion.HTTP_1_1;
+                case "1.0" -> HttpVersion.HTTP_1_0;
+                default -> throw new RuntimeException();
+            };
 
-            if (parsedMessage.getVerb() == HttpVerb.GET) handleGET(out, parsedMessage, binaryOut);
-            else handlePOST(in, out, parsedMessage);
-        } catch (FileNotFoundException  | FileCreationException          |
+            persisting = switch (version) {
+                case HTTP_1_0 -> false;
+                case HTTP_1_1 -> true;
+            };
+
+            var connectionOption =  parsedMessage.lookup("connection").map(String::toLowerCase);
+            if (connectionOption.isPresent()) {
+                persisting = switch (connectionOption.get()) {
+                    case "keep-alive" -> true;
+                    case "close" -> false;
+                    default -> throw new DataFormatException("Header connection can either be keep-alive or close.");
+                };
+            }
+
+            if (parsedMessage.getVerb() == HttpVerb.GET) handleGET(parsedMessage, binaryOut);
+            else handlePOST(in, binaryOut, parsedMessage);
+        } catch (FileNotFoundException | FileCreationException |
                  FileRetrievalException | MissingFormatArgumentException |
-                 DataFormatException    | NumberFormatException          |
+                 DataFormatException | NumberFormatException |
                  MessageParsingException e) {
-            // TODO: why +1 and not +2? CRLF is 2 bytes not 1?!!!
-            // TODO: what HTTP version to use in case of error?
-            writePrelude(out, "1.0", "text/plain", e.getMessage().getBytes().length + 1, false);
-            out.println(e.getMessage());
+            int statusCode;
+            if (e instanceof FileNotFoundException) statusCode = 404;
+            else if (e instanceof FileCreationException || e instanceof FileRetrievalException) statusCode = 500;
+            else statusCode = 400;
+            preparePrelude(HttpVersion.HTTP_1_1)
+                    .withBody(MIMEType.PLAINTEXT, (e.getMessage() + "\r\n").getBytes())
+                    .withResponseCode(statusCode)
+                    .build()
+                    .send(binaryOut);
         }
         return persisting;
     }
 
-    private void handlePOST(InputStream in, PrintWriter out, HttpRequest parsedMessage) throws DataFormatException, IOException {
+    private void handlePOST(InputStream in, OutputStream binaryOut, HttpRequest parsedMessage) throws DataFormatException, IOException {
         File file = new File("./server_content/" +
                 URLDecoder.decode(parsedMessage.getPath(), StandardCharsets.UTF_8));
 
-        if (parsedMessage.lookup("content-length").isEmpty())
+        Optional<String> contentLengthOptional = parsedMessage.lookup("content-length");
+        Optional<String> contentTypeOptional = parsedMessage.lookup("content-type");
+        if (contentLengthOptional.isEmpty())
             throw new MissingFormatArgumentException("Headers don't include Content-Length.");
-        if (parsedMessage.lookup("content-type").isEmpty())
+        if (contentTypeOptional.isEmpty())
             throw new MissingFormatArgumentException("Headers don't include Content-Type.");
 
         // the following looks terrible, but it seems to be the safest and most efficient option.
         int contentLength;
-        try { contentLength = Integer.parseInt(parsedMessage.lookup("content-length").get()); }
-        catch (NumberFormatException e) {
+        try {
+            contentLength = Integer.parseInt(contentLengthOptional.get());
+        } catch (NumberFormatException e) {
             throw new NumberFormatException("Content-Length is not an integer.");
         }
 
-        String contentType = parsedMessage.lookup("content-type").get();
+        String contentType = contentTypeOptional.get();
         if (!typeExtension.containsKey(contentType)) {
             throw new DataFormatException("Acceptable Content-Type's: " +
                     String.join(",", typeExtension.keySet()) + ".");
         }
 
-        String expectedExtension = "."+typeExtension.get(contentType);
+        String expectedExtension = "." + typeExtension.get(contentType);
         if (!parsedMessage.getPath().endsWith(expectedExtension)) {
             throw new DataFormatException("Content-Type is " + contentType +
                     " , but the extension is not " + expectedExtension + ".");
@@ -138,15 +176,25 @@ public class FileServerThread extends Thread {
         }
 
         try (
-                // TODO: do I care enough to handle 5XX type responses? should i respond? should i send 404 anyway?
                 FileOutputStream fileStream = new FileOutputStream(file)
         ) {
             fileStream.write(in.readNBytes(contentLength));
+        } catch (IOException e) {
+            // TODO: create a new exception class?
+            throw new FileCreationException("Error writing to " + parsedMessage.getPath());
         }
 
         String successMessage = "File " + file.getName() + " was successfully uploaded!";
-        writePrelude(out, parsedMessage.getMajorVersion() + "." + parsedMessage.getMinorVersion(), contentType, successMessage.getBytes().length + 1, true);
-        out.println(successMessage);
+        HttpVersion version = switch (parsedMessage.getMajorVersion() + "." + parsedMessage.getMinorVersion()) {
+            case "1.1" -> HttpVersion.HTTP_1_1;
+            case "1.0" -> HttpVersion.HTTP_1_0;
+            default -> throw new RuntimeException();
+        };
+        preparePrelude(version)
+                .withResponseCode(200)
+                .withBody(MIMEType.PLAINTEXT, (successMessage + "\r\n").getBytes())
+                .build()
+                .send(binaryOut);
     }
 
     public static String readLine(InputStream in) throws IOException {
@@ -164,32 +212,34 @@ public class FileServerThread extends Thread {
         return byteArrayOutputStream.toString();
     }
 
-    private void handleGET(PrintWriter out, HttpRequest parsedMessage, OutputStream binaryOut) throws IOException {
+    private void handleGET(HttpRequest parsedMessage, OutputStream binaryOut) throws IOException {
         File file = new File("./server_content/" +
                 URLDecoder.decode(parsedMessage.getPath(), StandardCharsets.UTF_8));
 
-        if (!file.exists()) throw new FileNotFoundException(file.getAbsolutePath() + " doesn't exist.");
+        if (!file.exists()) throw new FileNotFoundException(parsedMessage.getPath() + " doesn't exist.");
 
-        byte[] data = new byte[(int) file.length()];
-        int fileLength;
+        byte[] data;
         try (FileInputStream fileStream = new FileInputStream(file)) {
-            fileLength = fileStream.read(data);
-        } catch (IOException e) {
-            throw new FileCreationException(e.getMessage());
+            data = fileStream.readAllBytes();
+        } catch (IOException | AssertionError e) {
+            throw new FileRetrievalException("Couldn't read " + parsedMessage.getPath());
         }
 
-        writePrelude(out, parsedMessage.getMajorVersion() + "." + parsedMessage.getMinorVersion(), "text/plain", fileLength, true);
-        binaryOut.write(data, 0, fileLength);
+        HttpVersion version = switch (parsedMessage.getMajorVersion() + "." + parsedMessage.getMinorVersion()) {
+            case "1.1" -> HttpVersion.HTTP_1_1;
+            case "1.0" -> HttpVersion.HTTP_1_0;
+            default -> throw new RuntimeException();
+        };
+        preparePrelude(version)
+                .withResponseCode(200)
+                .withBody(MIMEType.PLAINTEXT, data)
+                .build()
+                .send(binaryOut);
     }
 
-    private void writePrelude(PrintWriter out, String version, String contentType, int length, boolean success) {
-        if (success)
-            out.println("HTTP/" + version + " 200 OK");
-        else out.println("HTTP/1.0 404 Not Found");
-        out.println("Server: server.FileServer/0.0.1");
-        out.println("Date: " + DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now()));
-        out.println("Content-Type: " + contentType);
-        out.println("Content-Length: " + length);
-        out.println();
+    private HttpResponseBuilder preparePrelude(HttpVersion version) {
+        return new HttpResponseBuilder(version)
+                .withHeader("Server", "FileServer/0.0.1")
+                .withHeader("Date", DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now()));
     }
 }
