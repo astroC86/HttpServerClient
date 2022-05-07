@@ -50,6 +50,6 @@ public class HttpResponseBuilder {
     }
 
     public HttpResponse build() {
-        return new HttpResponse(version, statusCode, statusMessage, body, headers);
+        return new HttpResponse(version, statusCode, statusMessage, headers,body);
     }
 }

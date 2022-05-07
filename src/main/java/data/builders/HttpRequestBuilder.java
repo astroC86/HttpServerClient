@@ -3,6 +3,7 @@ package data.builders;
 import data.HttpRequest;
 import data.HttpVerb;
 import data.HttpVersion;
+import data.MIMEType;
 
 
 import java.net.URI;
@@ -19,7 +20,7 @@ public class HttpRequestBuilder {
     private URI uri = URI.create("/");
     private HashMap<String,String> headers =  new HashMap<>();
     private byte[] body;
-    List<Function> bodyHandlers = new ArrayList<>(0);
+    List<Function> bodyHandlers = new ArrayList<>();
 
     public HttpRequestBuilder( HttpVerb verb, HttpVersion httpVersion){
         this.version = httpVersion;
@@ -35,7 +36,9 @@ public class HttpRequestBuilder {
         this.headers.put(head.toLowerCase(),value);
         return this;
     }
-    public HttpRequestBuilder withBody(byte[] body){
+    public HttpRequestBuilder withBody(String type, byte[] body){
+        headers.put("content-type", type);
+        headers.put("content-length", String.valueOf(body.length));
         this.body = body;
         return this;
     }
@@ -45,7 +48,7 @@ public class HttpRequestBuilder {
             headers.put("connection","keep-alive");
         }
         var req =  new HttpRequest(uri.toString(),headers,version,verb,body);
-        if(bodyHandlers.size() > 1){
+        if(bodyHandlers.size() > 0){
             req.addHandlers(bodyHandlers);
         }
         return req;

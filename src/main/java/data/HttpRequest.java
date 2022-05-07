@@ -15,7 +15,7 @@ public class HttpRequest {
     private int minorVersion;
     private HttpVerb verb;
     private byte[] body;
-    private List<Function> bodyHandlers;
+    private List<Function> bodyHandlers = new ArrayList<>();
 
     /**
      *
@@ -68,6 +68,7 @@ public class HttpRequest {
     }
 
     public Optional<String> lookup(String key){
+        key = key.toLowerCase();
         Optional<String> value = Optional.empty();
         if (headers.containsKey(key)) {
             value = Optional.of(headers.get(key));

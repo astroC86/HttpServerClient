@@ -5,6 +5,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 public class HttpResponse {
@@ -16,7 +17,7 @@ public class HttpResponse {
     private String statusMessage;
     private byte[] body;
 
-    public HttpResponse(int major,int minor, int statusCode, String statusMessage, byte[] body, Map<String, String> headers) {
+    public HttpResponse(int major,int minor, int statusCode, String statusMessage, Map<String, String> headers) {
         this.version       = switch (major){
                                 case 1 -> switch (minor){
                                         case 1 -> HttpVersion.HTTP_1_1;
@@ -27,16 +28,39 @@ public class HttpResponse {
         };
         this.statusCode    = statusCode;
         this.statusMessage = statusMessage;
-        this.body = body;
         this.headers = headers;
     }
 
-    public HttpResponse(HttpVersion version, int statusCode, String statusMessage, byte[] body, Map<String, String> headers) {
+    public HttpResponse(HttpVersion version, int statusCode, String statusMessage,  Map<String, String> headers,byte[] body) {
         this.version       = version;
         this.statusCode    = statusCode;
         this.statusMessage = statusMessage;
-        this.body = body;
         this.headers = headers;
+        this.body = body;
+    }
+
+    public Optional<String> lookup(String key){
+        Optional<String> value = Optional.empty();
+        if (headers.containsKey(key)) {
+            value = Optional.of(headers.get(key));
+        }
+        return value;
+    }
+
+    public HttpVersion getVersion() {
+        return version;
+    }
+
+    public Map<String, String> getHeaders() {
+        return headers;
+    }
+
+    public int getStatusCode() {
+        return statusCode;
+    }
+
+    public String getStatusMessage() {
+        return statusMessage;
     }
 
     public void send(OutputStream out) throws IOException {

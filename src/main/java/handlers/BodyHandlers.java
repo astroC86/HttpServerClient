@@ -16,7 +16,7 @@ public class BodyHandlers {
     };
 
     public static Function<String, Function<byte[],File>> ofFile = fname->(byteBuffer)->{
-        var outputFile =  new File("client_content/"+fname);
+        var outputFile =  new File("./client_content/"+fname);
         try {
             Files.write(outputFile.toPath(), byteBuffer);
         } catch (IOException e) {

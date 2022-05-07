@@ -7,9 +7,9 @@ import data.HttpVersion;
 import data.builders.HttpRequestBuilder;
 import handlers.BodyGenerators;
 import handlers.BodyHandlers;
-import utils.FileUtils;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.net.URI;
@@ -25,13 +25,13 @@ public class HttpClient {
     private static final Pattern linePattern = Pattern.compile(
                                                     "^(?<verb>POST|GET)" +
                                                             "(?:\\s+)" +
-                                                            "(?<fname>(?:(?:/)|(?:.*?\\.(?<ext>[^.]\\w+))))" +
+                                                            "(?:(?<fname>.*?)(?:\\.(?<ext>[^.]\\w+)))"+
                                                             "(?:\\s+)" +
                                                             "(?<hostname>(?:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|" +
                                                                         "(?:(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)+(?:[A-Za-z]|[A-Za-z][A-Za-z0-9\\-]*[A-Za-z0-9])))" +
                                                             "(?:\\s+)?(?<port>\\d+)?$");
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         String      commandsFile   = args[0];
         Path        fileName       = Path.of(commandsFile);
         Queue<Pair<HttpRequest,Integer>> requestsq = new ArrayDeque<>();
@@ -46,56 +46,60 @@ public class HttpClient {
                     var ext   = matcher.group("ext");
                     if (ext != null){
                         if (!typeExtension.inverse().containsKey(ext)) {
-                            System.err.println("Extension(" + ext + ") is not supported. Acceptable extensions: " +
+                            System.err.println("Line "+line+": Extension(" + ext + ") is not supported. Acceptable extensions: " +
                                     String.join(",", typeExtension.keySet()) + ".");
                             continue;
                         }
                         if(!fname.startsWith("/")) fname = "/" + fname;
-                    } else
-                        ext  = "";
+                    } else {
+                        System.err.printf("Line %d: Extension missing from file (%s).",line,fname);
+                        continue;
+                    }
+                    fname = fname +"."+ext;
                     var host = matcher.group("hostname").toLowerCase();
                     int port = 80;
                     if(!matcher.group("port").isEmpty())
                          port = Integer.parseInt(matcher.group("port"));
                     if (verb == HttpVerb.GET)
-                        requestsq.add( new Pair<>(generateGetRequest(fname+"."+ext,URI.create(host), BodyHandlers.ofFile.apply(fname)),port));
+                        requestsq.add( new Pair<>(generateGetRequest(fname,URI.create(host),BodyHandlers.ofFile.apply(fname)), port));
                     else {
-                        if(FileUtils.exists("/client_content"+fname)){
-                            requestsq.add(new Pair<>(generatePostRequest(fname,URI.create(host)),port));
+                        if(new File("./client_content/"+fname).exists()){
+                            requestsq.add(new Pair<>(generatePostRequest(fname,ext,URI.create(host)),port));
                         } else {
-                            System.err.printf("File (%s) does not exist, Not going to process request %d\n",fname,lineCount);
+                            System.err.printf("Line %d: File (%s) does not exist.\n",lineCount,fname);
                         }
                     }
                 } else {
-                    System.err.printf("Could not parse line %d, Invalid format\n",lineCount);
+                    System.err.printf("Could not parse line %d, Invalid format.\n",lineCount);
                 }
             }
         } catch (IOException e){
             e.printStackTrace();
         }
+        var client  = new HttpClientThread(requestsq);
     }
 
     private static HttpRequest generateGetRequest(String fname, URI host, Function handler){
-        return new HttpRequestBuilder(HttpVerb.GET,HttpVersion.HTTP_1_1)
+        return new HttpRequestBuilder(HttpVerb.GET,HttpVersion.HTTP_1_0)
                                 .to(URI.create(fname))
                                 .withHeader("Host",host.toString())
                                 .withHeader("Accept",String.join(",", typeExtension.keySet()))
                                 .withHeader("Accept-Language","en-us")
                                 .withHeader("User-Agent","Mozilla/4.0")
-                                .withHeader("Connection","Keep-Alive")
+                                .withHeader("Connection","Close")
                                 .withBodyHandler(handler)
                                 .build();
     }
 
-    private static HttpRequest generatePostRequest(String fname, URI host){
-        return new HttpRequestBuilder(HttpVerb.POST, HttpVersion.HTTP_1_1)
-                .to(URI.create(fname))
-                .withHeader("Host",host.toString())
-                .withHeader("Accept",String.join(",", typeExtension.keySet()))
-                .withHeader("Accept-Language","en-us")
-                .withHeader("User-Agent","Mozilla/4.0")
-                .withHeader("Connection","Keep-Alive")
-                .withBody(BodyGenerators.fromFile.apply(fname))
-                .build();
+    private static HttpRequest generatePostRequest(String fname, String ext, URI host){
+        return new HttpRequestBuilder(HttpVerb.POST, HttpVersion.HTTP_1_0)
+                                .to(URI.create(fname))
+                                .withHeader("Host",host.toString())
+                                .withHeader("Accept",String.join(",", typeExtension.keySet()))
+                                .withHeader("Accept-Language","en-us")
+                                .withHeader("User-Agent","Mozilla/4.0")
+                                .withHeader("Connection","Close")
+                                .withBody(typeExtension.inverse().get(ext),BodyGenerators.fromFile.apply(fname))
+                                .build();
     }
 }
