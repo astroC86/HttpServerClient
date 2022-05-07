@@ -228,9 +228,18 @@ public class FileServerThread extends Thread {
             case "1.0" -> HttpVersion.HTTP_1_0;
             default -> throw new RuntimeException();
         };
+
+        String[] splits = file.getName().split("\\.");
+        MIMEType type = !file.getName().contains(".") ? MIMEType.PLAINTEXT : switch (splits[splits.length - 1]) {
+            case "png" -> MIMEType.PNG;
+            case "txt" -> MIMEType.PLAINTEXT;
+            case "html" -> MIMEType.HTML;
+            default -> throw new FileNotFoundException(parsedMessage.getPath() + " doesn't exist.");
+        };
+
         preparePrelude(version)
                 .withResponseCode(200)
-                .withBody(MIMEType.PLAINTEXT, data)
+                .withBody(type, data)
                 .build()
                 .send(binaryOut);
     }

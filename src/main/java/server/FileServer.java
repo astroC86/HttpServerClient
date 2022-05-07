@@ -20,7 +20,7 @@ public class FileServer {
             Socket clientSocket = serverSocket.accept();
             new FileServerThread(
                     clientSocket,
-                    "Thead" + UUID.randomUUID().toString(),
+                    "Thread" + UUID.randomUUID(),
                     () -> threadCount.decrementAndGet(),
                     heuristic
             ).start();
