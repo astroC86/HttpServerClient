@@ -1,3 +1,3 @@
 POST index.html 127.0.0.1 80
-/GET index.html 127.0.0.1 80
-/GET z.txt 127.0.0.1 80
+GET index.html 127.0.0.1 80
+GET z.txt 127.0.0.1 80

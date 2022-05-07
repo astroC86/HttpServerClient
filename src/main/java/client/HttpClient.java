@@ -32,8 +32,16 @@ public class HttpClient {
                                                             "(?:\\s+)?(?<port>\\d+)?$");
 
     public static void main(String[] args) throws IOException {
+        if(args[0].length()  == 0){
+            System.err.println("Please provide the path to the commands file.");
+            System.exit(-1);
+        }
         String      commandsFile   = args[0];
         Path        fileName       = Path.of(commandsFile);
+        if(!fileName.toFile().exists()){
+            System.err.println("The provided path to the commands file does not exist.");
+            System.exit(-1);
+        }
         Queue<Pair<HttpRequest,Integer>> requestsq = new ArrayDeque<>();
 
         try (BufferedReader br = new BufferedReader(new FileReader(fileName.toFile()))) {
@@ -81,7 +89,7 @@ public class HttpClient {
 
     private static HttpRequest generateGetRequest(String fname, URI host, Function handler){
         return new HttpRequestBuilder(HttpVerb.GET,HttpVersion.HTTP_1_0)
-                                .to(URI.create(fname))
+                                .to(URI.create("./server_content/"+fname))
                                 .withHeader("Host",host.toString())
                                 .withHeader("Accept",String.join(",", typeExtension.keySet()))
                                 .withHeader("Accept-Language","en-us")
