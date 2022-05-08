@@ -86,6 +86,8 @@ public class HttpRequest {
             out.write((kv.getKey()+": "+kv.getValue()+CLRF).getBytes(StandardCharsets.US_ASCII));
         }
         out.write(CLRF.getBytes(StandardCharsets.US_ASCII));
+        if(body!=null)
+            out.write(body);
     }
 
     public void addHandlers(List<Function> bodyHandlers) {

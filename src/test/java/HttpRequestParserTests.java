@@ -56,9 +56,9 @@ public class HttpRequestParserTests {
                                                     .withHeader("Accept","*/*")
                                                     .withHeader("Accept-Encoding","identity")
                                                     .withHeader("Host","localhost:8000")
-                                                    .withHeader("Connection","Keep-Alive").build();
+                                                    .withHeader("Connection","Keep-Alive");
         try {
-            mck.send(output);
+            mck.build().send(output);
             String msg = output.toString();
             HashMap<String,String> header = (HashMap<String,String>)headerField.get(mck);
             HttpRequest res = HttpRequestParser.parse(msg);
@@ -76,7 +76,7 @@ public class HttpRequestParserTests {
 
     @Test
     void message_parse_without_header() {
-        var mck = new HttpRequestBuilder(HttpVerb.GET, HttpVersion.HTTP_1_1).build();
+        var mck = new HttpRequestBuilder(HttpVerb.GET, HttpVersion.HTTP_1_0).build();
         try {
             mck.send(output);
             String msg = output.toString();
@@ -121,6 +121,30 @@ public class HttpRequestParserTests {
         Exception exception = assertThrows(MessageParsingException.class, () -> {
             HttpRequest res = HttpRequestParser.parse(msg);
         });
+    }
+
+    @Test
+    void should_allow_headers_with_numbers(){
+        var mck = new HttpRequestBuilder(HttpVerb.GET, HttpVersion.HTTP_1_1)
+                                    .withHeader("User-Agent","Wget/1.19.4 (linux-gnu)")
+                                    .withHeader("Host","localhost:8000")
+                                    .withHeader("Connection","Keep-Alive")
+                                    .withHeader("Content-MD5","Q2hlY2sgSW50ZWdyaXR5IQ==");
+        try {
+            mck.build().send(output);
+            String msg = output.toString();
+            HashMap<String,String> header = (HashMap<String,String>)headerField.get(mck);
+            HttpRequest res = HttpRequestParser.parse(msg);
+            for(var kv: header.entrySet()) {
+                var head = res.lookup(kv.getKey());
+                assertFalse(head.isEmpty(), "User Agent is not parsed");
+                assertEquals(head.get(),kv.getValue(),"value is corrupt for head: "+kv.getKey());
+            }
+        }catch (MessageParsingException exception){
+            fail();
+        } catch (IllegalAccessException | IOException e) {
+            e.printStackTrace();
+        }
     }
 
 

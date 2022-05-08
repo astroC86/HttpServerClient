@@ -44,9 +44,9 @@ public class HttpRequestBuilder {
     }
 
     public HttpRequest build() {
-        if (!headers.containsKey("connection") && version == HttpVersion.HTTP_1_1) {
-            headers.put("connection","keep-alive");
-        }
+//        if (!headers.containsKey("connection") && version == HttpVersion.HTTP_1_1) {
+//            headers.put("connection","keep-alive");
+//        }
         var req =  new HttpRequest(uri.toString(),headers,version,verb,body);
         if(bodyHandlers.size() > 0){
             req.addHandlers(bodyHandlers);

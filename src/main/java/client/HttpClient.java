@@ -32,7 +32,7 @@ public class HttpClient {
                                                             "(?:\\s+)?(?<port>\\d+)?$");
 
     public static void main(String[] args) throws IOException {
-        if(args[0].length()  == 0){
+        if(args.length == 0 ){
             System.err.println("Please provide the path to the commands file.");
             System.exit(-1);
         }
@@ -66,7 +66,7 @@ public class HttpClient {
                     fname = fname +"."+ext;
                     var host = matcher.group("hostname").toLowerCase();
                     int port = 80;
-                    if(!matcher.group("port").isEmpty())
+                    if(matcher.group("port")!=null)
                          port = Integer.parseInt(matcher.group("port"));
                     if (verb == HttpVerb.GET)
                         requestsq.add( new Pair<>(generateGetRequest(fname,URI.create(host),BodyHandlers.ofFile.apply(fname)), port));
@@ -89,7 +89,7 @@ public class HttpClient {
 
     private static HttpRequest generateGetRequest(String fname, URI host, Function handler){
         return new HttpRequestBuilder(HttpVerb.GET,HttpVersion.HTTP_1_0)
-                                .to(URI.create("./server_content/"+fname))
+                                .to(URI.create(fname))
                                 .withHeader("Host",host.toString())
                                 .withHeader("Accept",String.join(",", typeExtension.keySet()))
                                 .withHeader("Accept-Language","en-us")
