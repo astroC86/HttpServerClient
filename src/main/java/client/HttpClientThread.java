@@ -3,6 +3,9 @@ package client;
 import collections.Pair;
 import data.HttpRequest;
 import data.HttpResponse;
+import data.HttpVerb;
+import data.HttpVersion;
+import data.builders.HttpRequestBuilder;
 import data.parsers.HttpResponseParser;
 import exceptions.MessageParsingException;
 import handlers.TransferEncodingHandlers;
@@ -10,6 +13,7 @@ import handlers.TransferEncodingHandlers;
 import java.io.*;
 import java.net.Socket;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -69,34 +73,56 @@ public class HttpClientThread {
         }
     }
 
-
-
-    private void retry() {
-        //TODO
-        /*
-          1. Initiate a new connection to the server
-
-          2. Transmit the request-headers
-
-          3. Initialize a variable R to the estimated round-trip time to the
-             server (e.g., based on the time it took to establish the
-             connection), or to a constant value of 5 seconds if the round-
-             trip time is not available.
-
-          4. Compute T = R * (2**N), where N is the number of previous
-             retries of this request.
-
-          5. Wait either for an error response from the server, or for T
-             seconds (whichever comes first)
-
-          6. If no error response is received, after T seconds transmit the
-             body of the request.
-
-          7. If client sees that the connection is closed prematurely,
-             repeat from step 1 until the request is accepted, an error
-             response is received, or the user becomes impatient and
-             terminates the retry process.
-         */
+    private void retry(String host, int port,HttpRequest request) throws IOException {
+        double T = 0;
+        int N = 0;
+        var executor = Executors.newFixedThreadPool(2);
+        do {
+            //1. Initiate a new connection to the server
+            Socket socket = new Socket(host, port);
+            var in = socket.getInputStream();
+            var out = socket.getOutputStream();
+            //          2. Transmit the request-headers
+            new HttpRequestBuilder(HttpVerb.POST, HttpVersion.HTTP_1_1)
+                    .withHeader("Host", host)
+                    .withHeader("Expect", "100-continue")
+                    .withHeader("", "").build().send(out);
+            // 3. Initialize a variable R to the estimated round-trip time to the server
+            // (e.g., based on the time it took to establish the connection),
+            // or to a constant value of 5 seconds if the round-trip time is not available.
+            int R = 5;
+            // 4. Compute T = R * (2**N), where N is the number of previous retries of this request.
+            T = R * Math.pow(2, N);
+            var task = new FutureTask <> (
+                    () -> {
+                        ArrayList < String > lines = new ArrayList<>();
+                        while (true) {
+                            String line = readLine( in );
+                            if (line == null) return null;
+                            if (line.isEmpty()) break;
+                            lines.add(line);
+                        }
+                        return HttpResponseParser.parse(lines);
+                }
+            );
+            // Submit the task to the thread pool
+            executor.submit(task);
+            try {
+                int _T = (int) T;
+                // Wait for a result during at most 1 second
+                var req = task.get(_T, TimeUnit.SECONDS);
+                // 5. Wait either for an error response from the server, or for T seconds (whichever comes first)
+                // 6. If no error response is received, after T seconds transmit the body of the request.
+                var statusCode = req.getStatusCode();
+                if(statusCode == 100) {
+                    req.send(out); break;
+                }
+                break;
+            } catch (TimeoutException | ExecutionException | InterruptedException ignored) {}
+            // 7. If client sees that the connection is closed prematurely, repeat from step 1 until the request is accepted,
+            // an error response is received, or the user becomes impatient and terminates the retry process.
+            N += 1;
+        } while (true);
     }
 
     @SuppressWarnings("unchecked")
@@ -120,6 +146,7 @@ public class HttpClientThread {
 
             byte[] body = new byte[0];
             HttpResponse parsedResponse = HttpResponseParser.parse(lines);
+
             Optional<String> contentLengthOptional    = parsedResponse.lookup("content-length");
             Optional<String> contentTypeOptional      = parsedResponse.lookup("content-type");
             Optional<String> transferEncodingOptional = parsedResponse.lookup("transfer-encoding");

@@ -5,6 +5,7 @@ import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.RecursiveTask;
 import java.util.function.Function;
 
 public class HttpRequest {
@@ -101,10 +102,8 @@ public class HttpRequest {
 
     public boolean persists(){
         var persists = (majorVersion == 1 && minorVersion == 1) || majorVersion > 1;
-
-        var keepAliveOptional = this.lookup("connection");
-        if (keepAliveOptional.isPresent()){
-            var keepAlive = keepAliveOptional.get();
+        if (headers.containsKey("connection")){
+            var keepAlive = headers.get("connection");
             return keepAlive.equals("keep-alive");
         }
         return persists;

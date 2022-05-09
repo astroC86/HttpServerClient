@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -45,10 +46,6 @@ public class HttpResponse {
         return value;
     }
 
-    public Map<String, String> getHeaders() {
-        return headers;
-    }
-
     public int getStatusCode() {
         return statusCode;
     }
@@ -76,14 +73,11 @@ public class HttpResponse {
         out.write(CLRF.getBytes(StandardCharsets.US_ASCII));
         out.write(this.body);
     }
-
-
+    
     public boolean persists(){
         var persists = (major == 1 && minor == 1) || major > 1;
-
-        var keepAliveOptional = this.lookup("connection");
-        if (keepAliveOptional.isPresent()){
-            var keepAlive = keepAliveOptional.get();
+        if (headers.containsKey("connection")){
+            var keepAlive = headers.get("connection");
             return keepAlive.equals("keep-alive");
         }
         return persists;

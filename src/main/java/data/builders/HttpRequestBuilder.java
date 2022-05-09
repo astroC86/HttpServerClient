@@ -36,6 +36,8 @@ public class HttpRequestBuilder {
         this.headers.put(head.toLowerCase(),value);
         return this;
     }
+
+
     public HttpRequestBuilder withBody(String type, byte[] body){
         headers.put("content-type", type);
         headers.put("content-length", String.valueOf(body.length));
