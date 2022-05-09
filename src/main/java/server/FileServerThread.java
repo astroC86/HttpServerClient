@@ -1,5 +1,6 @@
 package server;
 
+import collections.Pair;
 import data.*;
 import data.builders.HttpResponseBuilder;
 import data.parsers.HttpRequestParser;
@@ -12,11 +13,10 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.rmi.UnexpectedException;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.function.Supplier;
 import java.util.logging.*;
 import java.util.zip.DataFormatException;
@@ -44,6 +44,7 @@ public class FileServerThread extends Thread {
     private final Logger logger;
     private final Runnable callback;
     private Supplier<Integer> timeoutSupplier;
+    private PriorityBlockingQueue<Pair<HttpResponse, Integer>> queue = new PriorityBlockingQueue<>(1, Comparator.comparingInt(o -> o.y));
 
     FileServerThread(Socket clientSocket, String threadName, Runnable callback, Supplier<Integer> timeoutSupplier) {
         this.clientSocket = clientSocket;
@@ -65,7 +66,24 @@ public class FileServerThread extends Thread {
                 InputStream in = clientSocket.getInputStream();
                 OutputStream binaryOut = clientSocket.getOutputStream()
         ) {
-            Semaphore mutex = new Semaphore(1);
+            Thread queueThread = new Thread(() -> {
+                while (true) {
+                    Pair<HttpResponse, Integer> responsePair = queue.poll();
+                    if (responsePair != null) {
+                        if (responsePair.x == null) return;
+                        HttpResponse response = responsePair.x;
+                        try {
+                            response.send(clientSocket.getOutputStream());
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            });
+
+            queueThread.start();
+
+            int responseNo = 0;
             boolean persisting = true;
             while (persisting) {
                 ArrayList<String> lines = new ArrayList<>();
@@ -79,7 +97,14 @@ public class FileServerThread extends Thread {
 
                 logger.log(Level.INFO, "input:\n  {0}", String.join("\n  ", lines));
 
-                persisting = respond(in, binaryOut, lines, mutex);
+                persisting = respond(in, binaryOut, lines, responseNo);
+            }
+
+            queue.add(new Pair<>(null, Integer.MAX_VALUE));
+            try {
+                queueThread.join();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
         } catch (SocketTimeoutException e) {
             logger.log(Level.INFO, e.getMessage());
@@ -90,7 +115,7 @@ public class FileServerThread extends Thread {
         callback.run();
     }
 
-    private boolean respond(InputStream in, OutputStream binaryOut, ArrayList<String> lines, Semaphore mutex) throws IOException {
+    private boolean respond(InputStream in, OutputStream binaryOut, ArrayList<String> lines, int responseNo) throws IOException {
         boolean persisting = true;
         try {
             HttpRequest parsedMessage = HttpRequestParser.parse(lines);
@@ -124,14 +149,14 @@ public class FileServerThread extends Thread {
                 if(persisting){
                     new Thread(() -> {
                         try {
-                            handleGET(parsedMessage, binaryOut, mutex);
+                            handleGET(parsedMessage, binaryOut, responseNo);
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
                     }).start();
-                } else handleGET(parsedMessage, binaryOut, mutex);
+                } else handleGET(parsedMessage, binaryOut, responseNo);
             } else
-                handlePOST(in, binaryOut, parsedMessage, mutex);
+                handlePOST(in, binaryOut, parsedMessage, responseNo);
 
         } catch (FileNotFoundException | FileCreationException |
                  FileRetrievalException | MissingFormatArgumentException |
@@ -141,16 +166,16 @@ public class FileServerThread extends Thread {
             if (e instanceof FileNotFoundException) statusCode = 404;
             else if (e instanceof FileCreationException || e instanceof FileRetrievalException) statusCode = 500;
             else statusCode = 400;
-            preparePrelude(HttpVersion.HTTP_1_1)
+            var response = preparePrelude(HttpVersion.HTTP_1_1)
                     .withBody(MIMEType.PLAINTEXT, (e.getMessage() + "\r\n").getBytes())
                     .withResponseCode(statusCode)
-                    .build()
-                    .send(binaryOut);
+                    .build();
+            queue.add(new Pair<>(response, responseNo));
         }
         return persisting;
     }
 
-    private void handlePOST(InputStream in, OutputStream binaryOut, HttpRequest parsedMessage, Semaphore mutex) throws DataFormatException, IOException {
+    private void handlePOST(InputStream in, OutputStream binaryOut, HttpRequest parsedMessage, int responseNo) throws DataFormatException, IOException {
         File file = new File("./server_content/" +
                 URLDecoder.decode(parsedMessage.getPath(), StandardCharsets.UTF_8));
 
@@ -208,17 +233,10 @@ public class FileServerThread extends Thread {
                 .withBody(MIMEType.PLAINTEXT, (successMessage + "\r\n").getBytes())
                 .build();
 
-        try {
-            mutex.acquire();
-            response.send(binaryOut);
-        } catch (InterruptedException e) {
-            throw new UnexpectedException("Thread was interrupted during mutex lock");
-        } finally {
-            mutex.release();
-        }
+        queue.add(new Pair(response, responseNo));
     }
 
-    private void handleGET(HttpRequest parsedMessage, OutputStream binaryOut, Semaphore mutex) throws IOException {
+    private void handleGET(HttpRequest parsedMessage, OutputStream binaryOut, int responseNo) throws IOException {
         File file = new File("./server_content/" +
                 URLDecoder.decode(parsedMessage.getPath(), StandardCharsets.UTF_8));
 
@@ -250,14 +268,7 @@ public class FileServerThread extends Thread {
                 .withBody(type, data)
                 .build();
 
-        try {
-            mutex.acquire();
-            response.send(binaryOut);
-        } catch (InterruptedException e) {
-            throw new UnexpectedException("Thread was interrupted during mutex lock");
-        } finally {
-            mutex.release();
-        }
+        queue.add(new Pair(response, responseNo));
     }
 
     private HttpResponseBuilder preparePrelude(HttpVersion version) {
