@@ -117,8 +117,19 @@ public class FileServerThread extends Thread {
                 };
             }
 
-            if (parsedMessage.getVerb() == HttpVerb.GET) handleGET(parsedMessage, binaryOut);
-            else handlePOST(in, binaryOut, parsedMessage);
+            if (parsedMessage.getVerb() == HttpVerb.GET) {
+                if(persisting){
+                    new Thread(() -> {
+                        try {
+                            handleGET(parsedMessage, binaryOut);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }).start();
+                } else handleGET(parsedMessage, binaryOut);
+            } else
+                handlePOST(in, binaryOut, parsedMessage);
+
         } catch (FileNotFoundException | FileCreationException |
                  FileRetrievalException | MissingFormatArgumentException |
                  DataFormatException | NumberFormatException |

@@ -10,29 +10,27 @@ import java.util.stream.Collectors;
 
 public class HttpResponse {
     private final String CLRF = "\r\n";
-    HttpVersion version;
-
+    private int minor;
+    private int major;
     private Map<String,String> headers;
     private int statusCode;
     private String statusMessage;
     private byte[] body;
 
     public HttpResponse(int major,int minor, int statusCode, String statusMessage, Map<String, String> headers) {
-        this.version       = switch (major){
-                                case 1 -> switch (minor){
-                                        case 1 -> HttpVersion.HTTP_1_1;
-                                        case 0 -> HttpVersion.HTTP_1_0;
-                                    default -> throw new IllegalArgumentException("Unexpected value for minor version: " + minor);
-                                };
-            default -> throw new IllegalArgumentException("Unexpected value for HTTP major version: " + major);
-        };
+        this.major = major;
+        this.minor = minor;
         this.statusCode    = statusCode;
         this.statusMessage = statusMessage;
         this.headers = headers;
     }
 
     public HttpResponse(HttpVersion version, int statusCode, String statusMessage,  Map<String, String> headers,byte[] body) {
-        this.version       = version;
+        switch (version) {
+            case HTTP_1_0 -> { major = 1; minor = 0;}
+            case HTTP_1_1 -> { minor = 1; major = 1;}
+            default -> throw new IllegalArgumentException("Provided an invalid HTTP version");
+        }
         this.statusCode    = statusCode;
         this.statusMessage = statusMessage;
         this.headers = headers;
@@ -47,10 +45,6 @@ public class HttpResponse {
         return value;
     }
 
-    public HttpVersion getVersion() {
-        return version;
-    }
-
     public Map<String, String> getHeaders() {
         return headers;
     }
@@ -63,8 +57,16 @@ public class HttpResponse {
         return statusMessage;
     }
 
+    public int getMinorVersion() {
+        return minor;
+    }
+
+    public int getMajorVersion() {
+        return major;
+    }
+
     public void send(OutputStream out) throws IOException {
-        out.write((version.toString()  + " " + statusCode + " " + statusMessage + CLRF).getBytes(StandardCharsets.US_ASCII));
+        out.write(("HTTP/"+major + "." +minor + " " + statusCode + " " + statusMessage + CLRF).getBytes(StandardCharsets.US_ASCII));
         for (var kv: headers.entrySet()) {
             String key = Arrays.stream(kv.getKey().split("-"))
                     .map(s -> Character.toUpperCase(s.charAt(0)) + s.substring(1))
@@ -73,6 +75,18 @@ public class HttpResponse {
         }
         out.write(CLRF.getBytes(StandardCharsets.US_ASCII));
         out.write(this.body);
+    }
+
+
+    public boolean persists(){
+        var persists = (major == 1 && minor == 1) || major > 1;
+
+        var keepAliveOptional = this.lookup("connection");
+        if (keepAliveOptional.isPresent()){
+            var keepAlive = keepAliveOptional.get();
+            return keepAlive.equals("keep-alive");
+        }
+        return persists;
     }
 
     public Object getBody() {

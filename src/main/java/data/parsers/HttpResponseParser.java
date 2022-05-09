@@ -52,4 +52,5 @@ public class HttpResponseParser {
         }
         return new HttpResponse(httpMajorVersion,httpMinorVersion,statusCode,statusMsg,headers);
     }
+
 }

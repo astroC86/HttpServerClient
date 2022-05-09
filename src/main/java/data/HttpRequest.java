@@ -98,6 +98,19 @@ public class HttpRequest {
         return bodyHandlers;
     }
 
+
+    public boolean persists(){
+        var persists = (majorVersion == 1 && minorVersion == 1) || majorVersion > 1;
+
+        var keepAliveOptional = this.lookup("connection");
+        if (keepAliveOptional.isPresent()){
+            var keepAlive = keepAliveOptional.get();
+            return keepAlive.equals("keep-alive");
+        }
+        return persists;
+    }
+
+
     @Override
     public String toString() {
         return "ParsedMessage{" +
