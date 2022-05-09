@@ -1,7 +1,7 @@
 package data;
 
 public enum MIMEType {
-    PLAINTEXT, PNG, HTML;
+    PLAINTEXT, PNG, HTML, BLOB;
 
     @Override
     public String toString() {
@@ -9,6 +9,7 @@ public enum MIMEType {
             case PLAINTEXT -> "text/plain";
             case PNG -> "image/png";
             case HTML -> "text/html";
+            case BLOB -> "application/octet-stream";
         };
     }
 }
