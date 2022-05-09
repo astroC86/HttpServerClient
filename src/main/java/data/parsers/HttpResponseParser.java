@@ -12,7 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class HttpResponseParser {
-    private static final Pattern firstLinePattern  = Pattern.compile("^HTTP/(?<version>\\d.\\d) (?<scode>\\d+) (?<smsg>\\w+)$");
+    private static final Pattern firstLinePattern  = Pattern.compile("^HTTP/(?<version>\\d.\\d) (?<scode>\\d+) (?<smsg>.[^0-9]*)$");
     private static final Pattern headerPattern    = Pattern.compile("^(?<key>[a-zA-Z-_]*): (?<val>(.*))$");
 
     public static HttpResponse parse(String readString) throws MessageParsingException {
@@ -27,9 +27,9 @@ public class HttpResponseParser {
         if (!firstLineMatcher.matches())
             throw new MessageParsingException("First line didn't match the anticipated format.");
 
-        HttpVerb httpVerb = HttpVerb.valueOf(firstLineMatcher.group("verb"));
-        String path = firstLineMatcher.group("path");
         String httpVersion = firstLineMatcher.group("version");
+        int statusCode = Integer.parseInt(firstLineMatcher.group("scode"));
+        String statusMsg = firstLineMatcher.group("smsg");
         int httpMajorVersion = Integer.parseInt(httpVersion.split("\\.")[0]);
         int httpMinorVersion = Integer.parseInt(httpVersion.split("\\.")[1]);
 
@@ -50,6 +50,7 @@ public class HttpResponseParser {
             else
                 headers.put(key, val);
         }
-        return null;
+        return new HttpResponse(httpMajorVersion,httpMinorVersion,statusCode,statusMsg,headers);
     }
+
 }

@@ -5,6 +5,7 @@ import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.RecursiveTask;
 import java.util.function.Function;
 
 public class HttpRequest {
@@ -15,7 +16,7 @@ public class HttpRequest {
     private int minorVersion;
     private HttpVerb verb;
     private byte[] body;
-    private List<Function> bodyHandlers;
+    private List<Function> bodyHandlers = new ArrayList<>();
 
     /**
      *
@@ -68,6 +69,7 @@ public class HttpRequest {
     }
 
     public Optional<String> lookup(String key){
+        key = key.toLowerCase();
         Optional<String> value = Optional.empty();
         if (headers.containsKey(key)) {
             value = Optional.of(headers.get(key));
@@ -85,6 +87,8 @@ public class HttpRequest {
             out.write((kv.getKey()+": "+kv.getValue()+CLRF).getBytes(StandardCharsets.US_ASCII));
         }
         out.write(CLRF.getBytes(StandardCharsets.US_ASCII));
+        if(body!=null)
+            out.write(body);
     }
 
     public void addHandlers(List<Function> bodyHandlers) {
@@ -94,6 +98,17 @@ public class HttpRequest {
     public List<Function> getBodyHandlers(){
         return bodyHandlers;
     }
+
+
+    public boolean persists(){
+        var persists = (majorVersion == 1 && minorVersion == 1) || majorVersion > 1;
+        if (headers.containsKey("connection")){
+            var keepAlive = headers.get("connection");
+            return keepAlive.equals("keep-alive");
+        }
+        return persists;
+    }
+
 
     @Override
     public String toString() {

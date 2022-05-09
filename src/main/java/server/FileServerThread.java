@@ -19,6 +19,7 @@ import java.util.function.Supplier;
 import java.util.logging.*;
 import java.util.zip.DataFormatException;
 
+import static utils.Content.readLine;
 import static utils.Content.typeExtension;
 
 public class FileServerThread extends Thread {
@@ -116,8 +117,19 @@ public class FileServerThread extends Thread {
                 };
             }
 
-            if (parsedMessage.getVerb() == HttpVerb.GET) handleGET(parsedMessage, binaryOut);
-            else handlePOST(in, binaryOut, parsedMessage);
+            if (parsedMessage.getVerb() == HttpVerb.GET) {
+                if(persisting){
+                    new Thread(() -> {
+                        try {
+                            handleGET(parsedMessage, binaryOut);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }).start();
+                } else handleGET(parsedMessage, binaryOut);
+            } else
+                handlePOST(in, binaryOut, parsedMessage);
+
         } catch (FileNotFoundException | FileCreationException |
                  FileRetrievalException | MissingFormatArgumentException |
                  DataFormatException | NumberFormatException |
@@ -193,21 +205,6 @@ public class FileServerThread extends Thread {
                 .withBody(MIMEType.PLAINTEXT, (successMessage + "\r\n").getBytes())
                 .build()
                 .send(binaryOut);
-    }
-
-    public static String readLine(InputStream in) throws IOException {
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        int c;
-        boolean lastCharIsReturn = false;
-        for (c = in.read(); !(c == '\n' && lastCharIsReturn) && c != -1; c = in.read()) {
-            lastCharIsReturn = c == '\r';
-            if (!lastCharIsReturn) byteArrayOutputStream.write(c);
-        }
-
-        if (c == -1 && byteArrayOutputStream.size() == 0) { //end of stream
-            return null;
-        }
-        return byteArrayOutputStream.toString();
     }
 
     private void handleGET(HttpRequest parsedMessage, OutputStream binaryOut) throws IOException {

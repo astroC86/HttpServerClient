@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 
 public class HttpRequestParser {
     private static final Pattern firstLinePattern = Pattern.compile("^(?<verb>GET|POST)\\s/(?<path>.*) HTTP/(?<version>\\d.\\d)$");
-    private static final Pattern headerPattern    = Pattern.compile("^(?<key>[a-zA-Z-_]*): (?<val>(.*))$");
+    private static final Pattern headerPattern    = Pattern.compile("^(?<key>[a-zA-Z-_0-9]*): (?<val>(.*))$");
 
     public static HttpRequest parse(String raw) throws MessageParsingException {
         ArrayList<String> lines  = new ArrayList<>(List.of(raw.split("(?:\r\n)")));

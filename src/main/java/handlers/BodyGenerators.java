@@ -8,7 +8,7 @@ import java.util.function.Function;
 public class BodyGenerators {
     public static Function<String,byte[]> fromFile = (fname) -> {
         try {
-            return Files.readAllBytes(Paths.get("/client_content/"+fname));
+            return Files.readAllBytes(Paths.get("./client_content/"+fname));
         } catch (IOException e) {
             e.printStackTrace();
         }
