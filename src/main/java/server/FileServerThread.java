@@ -62,17 +62,20 @@ public class FileServerThread extends Thread {
 
     @Override
     public void run() {
-        try (
-                InputStream in = clientSocket.getInputStream();
-                OutputStream binaryOut = clientSocket.getOutputStream()
-        ) {
+        try {
+            InputStream in = clientSocket.getInputStream();
+            OutputStream binaryOut = clientSocket.getOutputStream();
+
             Thread queueThread = new Thread(() -> {
                 while (true) {
                     Pair<HttpResponse, Integer> responsePair = queue.poll();
                     if (responsePair != null) {
-                        if (responsePair.x == null) return;
-                        HttpResponse response = responsePair.x;
                         try {
+                            HttpResponse response = responsePair.x;
+                            if (response == null) {
+                                clientSocket.close();
+                                return;
+                            }
                             response.send(clientSocket.getOutputStream());
                         } catch (IOException e) {
                             e.printStackTrace();
@@ -97,14 +100,7 @@ public class FileServerThread extends Thread {
 
                 logger.log(Level.INFO, "input:\n  {0}", String.join("\n  ", lines));
 
-                persisting = respond(in, binaryOut, lines, responseNo);
-            }
-
-            queue.add(new Pair<>(null, Integer.MAX_VALUE));
-            try {
-                queueThread.join();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                persisting = respond(in, binaryOut, lines, responseNo++);
             }
         } catch (SocketTimeoutException e) {
             logger.log(Level.INFO, e.getMessage());
@@ -112,6 +108,7 @@ public class FileServerThread extends Thread {
             logger.log(Level.SEVERE, e.getMessage());
         }
 
+        queue.add(new Pair<>(null, Integer.MAX_VALUE));
         callback.run();
     }
 
