@@ -13,10 +13,10 @@ public class HttpResponse {
     private final String CLRF = "\r\n";
     private int minor;
     private int major;
-    private Map<String,String> headers;
+    private byte[] body;
     private int statusCode;
     private String statusMessage;
-    private byte[] body;
+    private Map<String,String> headers;
 
     public HttpResponse(int major,int minor, int statusCode, String statusMessage, Map<String, String> headers) {
         this.major = major;
@@ -46,22 +46,6 @@ public class HttpResponse {
         return value;
     }
 
-    public int getStatusCode() {
-        return statusCode;
-    }
-
-    public String getStatusMessage() {
-        return statusMessage;
-    }
-
-    public int getMinorVersion() {
-        return minor;
-    }
-
-    public int getMajorVersion() {
-        return major;
-    }
-
     public void send(OutputStream out) throws IOException {
         out.write(("HTTP/"+major + "." +minor + " " + statusCode + " " + statusMessage + CLRF).getBytes(StandardCharsets.US_ASCII));
         for (var kv: headers.entrySet()) {
@@ -83,7 +67,25 @@ public class HttpResponse {
         return persists;
     }
 
-    public Object getBody() {
+    public int getStatusCode() {
+        return statusCode;
+    }
+
+    public String getStatusMessage() {
+        return statusMessage;
+    }
+
+    public int getMinorVersion() {
+        return minor;
+    }
+
+    public int getMajorVersion() {
+        return major;
+    }
+
+    public byte[] getBody() {
         return this.body;
     }
+
+    public Map<String,String> cloneHeaders(){return Map.copyOf(headers);}
 }

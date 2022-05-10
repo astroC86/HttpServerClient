@@ -1,5 +1,6 @@
 package client;
 
+import caching.ClientCache;
 import collections.Pair;
 import data.HttpRequest;
 import data.HttpResponse;
@@ -20,12 +21,17 @@ import java.util.logging.Logger;
 import static utils.Content.readLine;
 
 public class HttpClientThread {
-    private Logger          logger;
-    private OutputStream    out;
+
+    private static final int      retries = 5;
+    private static final int      timeout = 100;
+
     private InputStream     in;
+    private OutputStream    out;
+    private final Logger    logger;
     private Socket          clientSocket;
-    private static int      timeout = 100;
-    HashMap<String, Socket> persistantHosts =  new HashMap<>();
+
+    private ClientCache             cache           =  new ClientCache();
+    private HashMap<String, Socket> persistentHosts =  new HashMap<>();
 
     public HttpClientThread(Queue<Pair<HttpRequest,Integer>> requests)  {
         this.logger       = Logger.getLogger("Client Thread");
@@ -43,12 +49,19 @@ public class HttpClientThread {
             var socketPath   = host +":"+port;
             var req_persists = req.persists();
             try {
-                if (req_persists && persistantHosts.containsKey(socketPath)){
-                    var socket  = persistantHosts.get(socketPath);
+                if (req_persists && persistentHosts.containsKey(socketPath)){
+                    var socket  = persistentHosts.get(socketPath);
                     // determine if the host is connected
                     if (!socket.getInetAddress().isReachable(timeout)){
                         socket.close();
-                        //close the existing socket and attempt to reconnect
+                        //close the existing socket and attempt to reconnect and send
+                        socket = retry(host,port);
+                        if(socket == null){
+                            logger.log(Level.INFO,"Failed to connect to existing socket of "+host+".");
+                            // otherwise continue
+                            persistentHosts.remove(socketPath);
+                            continue;
+                        }
                     }
                 } else {
                     //create a new socket
@@ -56,11 +69,11 @@ public class HttpClientThread {
                 }
                 var persists  = send(req);
                 if(persists){
-                    if(persistantHosts.containsKey(socketPath))
-                        persistantHosts.remove(socketPath);
+                    if(persistentHosts.containsKey(socketPath))
+                        persistentHosts.remove(socketPath);
                     else {
                         clientSocket.setKeepAlive(true);
-                        persistantHosts.put(socketPath,clientSocket);
+                        persistentHosts.put(socketPath,clientSocket);
                     }
                 } else { //close the socket
                     in.close();
@@ -73,9 +86,9 @@ public class HttpClientThread {
         }
     }
 
-    private void retry(String host, int port,HttpRequest request) throws IOException {
-        double T = 0;
-        int N = 0;
+    private Socket retry(String host, int port) throws IOException {
+        double T;
+        int N    = 0;
         var executor = Executors.newFixedThreadPool(2);
         do {
             //1. Initiate a new connection to the server
@@ -115,77 +128,33 @@ public class HttpClientThread {
                 // 6. If no error response is received, after T seconds transmit the body of the request.
                 var statusCode = req.getStatusCode();
                 if(statusCode == 100) {
-                    req.send(out); break;
+                    req.send(out); return socket;
                 }
-                break;
             } catch (TimeoutException | ExecutionException | InterruptedException ignored) {}
             // 7. If client sees that the connection is closed prematurely, repeat from step 1 until the request is accepted,
             // an error response is received, or the user becomes impatient and terminates the retry process.
             N += 1;
+            in.close();
+            out.close();
+            socket.close();
+            if (HttpClientThread.retries < N) return null;
         } while (true);
     }
 
-    @SuppressWarnings("unchecked")
     private boolean send(HttpRequest request) {
         boolean persisting = false;
-
         try {
-            this.out          = clientSocket.getOutputStream();
-            this.in           = clientSocket.getInputStream();
-
-            request.send(this.out);
-
-            ArrayList<String> lines = new ArrayList<>();
-            while (true) {
-                String line = readLine(in);
-                if(line == null) return false;
-                if(line.isEmpty()) break;
-                lines.add(line);
-            }
-            logger.log(Level.INFO, "input:\n  {0}", String.join("\n  ", lines));
-
-            byte[] body = new byte[0];
-            HttpResponse parsedResponse = HttpResponseParser.parse(lines);
-
-            Optional<String> contentLengthOptional    = parsedResponse.lookup("content-length");
-            Optional<String> contentTypeOptional      = parsedResponse.lookup("content-type");
-            Optional<String> transferEncodingOptional = parsedResponse.lookup("transfer-encoding");
-            if(transferEncodingOptional.isEmpty()) {
-                if (contentLengthOptional.isEmpty())
-                    throw new MissingFormatArgumentException("Headers don't include Content-Length.");
-                if (contentTypeOptional.isEmpty())
-                    throw new MissingFormatArgumentException("Headers don't include Content-Type.");
-
-                int contentLength;
-                try {
-                    contentLength = Integer.parseInt(contentLengthOptional.get());
-                } catch (NumberFormatException e) {
-                    throw new NumberFormatException("Malformed Content-Length.");
-                }
-              body = in.readNBytes(contentLength);
-            } else {
-                var transferEncoding = transferEncodingOptional.get();
-                if(transferEncoding.contains(",")){
-                    var codings = transferEncoding.split(",");
-                    if(Arrays.stream(codings).anyMatch(s -> s.equals("gzip") || s.equals("compress") || s.equals("deflate")) ){
-                        throw new RuntimeException("Does not support exception");
-                    } else if (Arrays.asList(codings).contains("chunked")){
-                        body = (byte[]) TransferEncodingHandlers.hndlrs.get("chunked").apply(in);
-                    }
-                } else if (transferEncoding.equals("chunked")){
-                    body = (byte[]) TransferEncodingHandlers.hndlrs.get("chunked").apply(in);
-                } else {
-                  throw new RuntimeException("Unsupported Transfer-Encoding Value");
-                }
-            }
-            if(body.length != 0) {
-                for (var bh: request.getBodyHandlers())//noinspection unchecked
-                    bh.apply(body);
-            }
-            persisting = parsedResponse.persists();
+            this.out = clientSocket.getOutputStream();
+            this.in  = clientSocket.getInputStream();
+            var parsedResponse = request.send(cache, in, out);
+            if (parsedResponse.isEmpty()) return false;
+            //logger.log(Level.INFO, "input:\n  {0}", String.join("\n  ", lines));
+            persisting = parsedResponse.get().persists();
         } catch (IOException | MessageParsingException e) {
             e.printStackTrace();
         }
         return persisting;
     }
+
+
 }

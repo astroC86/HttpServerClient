@@ -1,11 +1,13 @@
 package data;
 
+import caching.ClientCache;
+import exceptions.MessageParsingException;
+
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.RecursiveTask;
 import java.util.function.Function;
 
 public class HttpRequest {
@@ -52,6 +54,44 @@ public class HttpRequest {
         this.body = body;
     }
 
+    public Optional<String> lookup(String key){
+        key = key.toLowerCase();
+        Optional<String> value = Optional.empty();
+        if (headers.containsKey(key)) {
+            value = Optional.of(headers.get(key));
+        }
+        return value;
+    }
+
+    public void send(OutputStream out) throws IOException {
+        out.write((verb.name() +" "+path+" HTTP/"+ majorVersion+"."+minorVersion+CLRF).getBytes(StandardCharsets.US_ASCII));
+        for (var kv: headers.entrySet()) {
+            out.write((kv.getKey()+": "+kv.getValue()+CLRF).getBytes(StandardCharsets.US_ASCII));
+        }
+        out.write(CLRF.getBytes(StandardCharsets.US_ASCII));
+        if(body!=null)
+            out.write(body);
+    }
+
+    public Optional<HttpResponse> send(ClientCache cache, InputStream in, OutputStream out) throws IOException, MessageParsingException {
+        return cache.process(this,in,out);
+    }
+
+
+
+    public boolean persists(){
+        var persists = (majorVersion == 1 && minorVersion == 1) || majorVersion > 1;
+        if (headers.containsKey("connection")){
+            var keepAlive = headers.get("connection");
+            return keepAlive.equals("keep-alive");
+        }
+        return persists;
+    }
+
+    public int headerCount(){
+        return headers.size();
+    }
+
     public String getPath() {
         return path;
     }
@@ -68,47 +108,15 @@ public class HttpRequest {
         return verb;
     }
 
-    public Optional<String> lookup(String key){
-        key = key.toLowerCase();
-        Optional<String> value = Optional.empty();
-        if (headers.containsKey(key)) {
-            value = Optional.of(headers.get(key));
-        }
-        return value;
-    }
-
-    public int headerCount(){
-        return headers.size();
-    }
-
-    public void send(OutputStream out) throws IOException {
-        out.write((verb.name() +" "+path+" HTTP/"+ majorVersion+"."+minorVersion+CLRF).getBytes(StandardCharsets.US_ASCII));
-        for (var kv: headers.entrySet()) {
-            out.write((kv.getKey()+": "+kv.getValue()+CLRF).getBytes(StandardCharsets.US_ASCII));
-        }
-        out.write(CLRF.getBytes(StandardCharsets.US_ASCII));
-        if(body!=null)
-            out.write(body);
+    public List<Function> getBodyHandlers(){
+        return bodyHandlers;
     }
 
     public void addHandlers(List<Function> bodyHandlers) {
         this.bodyHandlers = bodyHandlers;
     }
 
-    public List<Function> getBodyHandlers(){
-        return bodyHandlers;
-    }
-
-
-    public boolean persists(){
-        var persists = (majorVersion == 1 && minorVersion == 1) || majorVersion > 1;
-        if (headers.containsKey("connection")){
-            var keepAlive = headers.get("connection");
-            return keepAlive.equals("keep-alive");
-        }
-        return persists;
-    }
-
+    public HashMap<String,String> cloneHeaders(){return (HashMap<String, String>) Map.copyOf(headers);}
 
     @Override
     public String toString() {
