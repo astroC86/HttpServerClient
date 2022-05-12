@@ -12,6 +12,7 @@ import exceptions.MessageParsingException;
 import handlers.TransferEncodingHandlers;
 
 import java.io.*;
+import java.net.ConnectException;
 import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.*;
@@ -80,7 +81,9 @@ public class HttpClientThread {
                     out.close();
                     clientSocket.close();
                 }
-            } catch (IOException e) {
+            }catch (ConnectException e){
+                logger.log(Level.INFO,"Host "+ host+" refused to connect.");
+             } catch (IOException e) {
                 logger.log(Level.SEVERE, Arrays.toString(e.getStackTrace()).replace(",","\n"));
             }
         }

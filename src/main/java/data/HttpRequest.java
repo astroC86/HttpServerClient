@@ -20,14 +20,6 @@ public class HttpRequest {
     private byte[] body;
     private List<Function> bodyHandlers = new ArrayList<>();
 
-    /**
-     *
-     * @param path
-     * @param headers
-     * @param majorVersion
-     * @param minorVersion
-     * @param verb
-     */
     public HttpRequest(String path, Map<String, String> headers, int majorVersion, int minorVersion, HttpVerb verb) {
         this.verb         = verb;
         this.path         = path;
