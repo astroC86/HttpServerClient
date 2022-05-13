@@ -3,13 +3,11 @@ package client;
 import caching.ClientCache;
 import collections.Pair;
 import data.HttpRequest;
-import data.HttpResponse;
 import data.HttpVerb;
 import data.HttpVersion;
 import data.builders.HttpRequestBuilder;
 import data.parsers.HttpResponseParser;
 import exceptions.MessageParsingException;
-import handlers.TransferEncodingHandlers;
 
 import java.io.*;
 import java.net.ConnectException;
@@ -31,15 +29,18 @@ public class HttpClientThread {
     private final Logger    logger;
     private Socket          clientSocket;
 
-    private ClientCache             cache           =  new ClientCache();
+    private final ClientCache       cache;
     private HashMap<String, Socket> persistentHosts =  new HashMap<>();
 
     public HttpClientThread(Queue<Pair<HttpRequest,Integer>> requests)  {
         this.logger       = Logger.getLogger("Client Thread");
+        this.cache        = new ClientCache(this.logger);
         this.logger.setLevel(Level.ALL);
+
         while (!requests.isEmpty()){
             var top = requests.poll();
             var req = top.x;
+            if(cache.isCached(req)) continue;
             var hostOptional = req.lookup("Host");
             if (hostOptional.isEmpty()){
                 logger.log(Level.SEVERE, "Invalid Request, Host not defined.");
@@ -58,7 +59,7 @@ public class HttpClientThread {
                         //close the existing socket and attempt to reconnect and send
                         socket = retry(host,port);
                         if(socket == null){
-                            logger.log(Level.INFO,"Failed to connect to existing socket of "+host+".");
+                            logger.log(Level.INFO,"Failed to connect to an existing socket of "+host+".");
                             // otherwise continue
                             persistentHosts.remove(socketPath);
                             continue;
@@ -83,11 +84,12 @@ public class HttpClientThread {
                 }
             }catch (ConnectException e){
                 logger.log(Level.INFO,"Host "+ host+" refused to connect.");
-             } catch (IOException e) {
+            } catch (IOException e) {
                 logger.log(Level.SEVERE, Arrays.toString(e.getStackTrace()).replace(",","\n"));
             }
         }
     }
+
 
     private Socket retry(String host, int port) throws IOException {
         double T;
@@ -151,13 +153,12 @@ public class HttpClientThread {
             this.in  = clientSocket.getInputStream();
             var parsedResponse = request.send(cache, in, out);
             if (parsedResponse.isEmpty()) return false;
-            //logger.log(Level.INFO, "input:\n  {0}", String.join("\n  ", lines));
             persisting = parsedResponse.get().persists();
-        } catch (IOException | MessageParsingException e) {
+        } catch (IOException e){
             e.printStackTrace();
+        } catch (MessageParsingException e) {
+            logger.log(Level.SEVERE, "Failed to parse Response for: "+request);
         }
         return persisting;
     }
-
-
 }

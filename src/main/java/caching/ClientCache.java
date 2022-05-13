@@ -8,6 +8,9 @@ import data.parsers.HttpResponseParser;
 import exceptions.MessageParsingException;
 import handlers.TransferEncodingHandlers;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -15,13 +18,24 @@ import java.io.OutputStream;
 import java.util.*;
 
 import static utils.Content.readLine;
-import static utils.Content.typeExtension;
 
 public class ClientCache {
     private final HashMap<String, HttpResponse> cacheIndex =  new HashMap<>();
+    private Logger logger;
+
+    public ClientCache(Logger lgr){
+        logger = lgr;
+    }
+
+    public boolean isCached(HttpRequest request){
+        var resource = request.getPath();
+        Optional<String> hostOption = request.lookup("host");
+        if(hostOption.isPresent()) resource += "/" + hostOption.get();
+        return cacheIndex.containsKey(resource);
+    }
 
     public Optional<HttpResponse> process(HttpRequest request, InputStream in, OutputStream out) throws IOException, MessageParsingException {
-        boolean cache = false;
+        boolean should_cache = false;
         var resource = request.getPath();
         Optional<String> hostOption = request.lookup("host");
         if(hostOption.isPresent()) resource += "/" + hostOption.get();
@@ -40,14 +54,19 @@ public class ClientCache {
                     };
                 res.send(tempOut);
                 in =  new ByteArrayInputStream(tempOut.toString().getBytes());
+                logger.log(Level.INFO,String.format("Cache HIT: %s",resource));
             } else {
-                cache = true;
+                should_cache = true;
                 request.send(out);
             }
         } else request.send(out);
-        var req = getResponse(in, request);
-        if (cache && req.isPresent()) cacheIndex.put(resource,req.get());
-        return req;
+        var response = getResponse(in, request);
+        if ( should_cache && response.isPresent() &&
+                response.get().getStatusCode() == 200 &&
+                    request.getVerb() == HttpVerb.GET ) {
+            cacheIndex.put(resource,response.get());
+        }
+        return response;
     }
 
     @SuppressWarnings("unchecked")

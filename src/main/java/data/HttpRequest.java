@@ -12,12 +12,12 @@ import java.util.function.Function;
 
 public class HttpRequest {
     private static final String CLRF = "\r\n";
+    private byte[] body;
     private String path;
-    private Map<String, String> headers;
+    private HttpVerb verb;
     private int majorVersion;
     private int minorVersion;
-    private HttpVerb verb;
-    private byte[] body;
+    private Map<String, String> headers;
     private List<Function> bodyHandlers = new ArrayList<>();
 
     public HttpRequest(String path, Map<String, String> headers, int majorVersion, int minorVersion, HttpVerb verb) {
