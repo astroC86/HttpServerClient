@@ -1,0 +1,19 @@
+GET /some_text_file.txt HTTP/1.1
+Host: example.com
+
+GET /some_text_file.txt HTTP/1.1
+Host: example.com
+
+GET /some_text_file2.txt HTTP/1.1
+Host: example.com
+
+GET /some_text_file3.txt HTTP/1.1
+Host: example.com
+
+GET /some_text_file4.txt HTTP/1.1
+Host: example.com
+
+GET /some_text_file5.txt HTTP/1.1
+Host: example.com
+Connection: close
+
