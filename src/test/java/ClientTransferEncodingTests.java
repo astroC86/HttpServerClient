@@ -53,11 +53,7 @@ public class ClientTransferEncodingTests {
                 .withBodyHandler(BodyHandlers.ofStream.apply(out))
                 .build();
         q.add(new Pair<>(mck,80));
-        try {
-            var client =  new HttpClientThread(q);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        var client =  new HttpClientThread(q);
         String exp  = """
                 <!DOCTYPE html>\r
                 <html lang=en>\r

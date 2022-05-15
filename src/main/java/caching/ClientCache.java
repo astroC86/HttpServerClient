@@ -8,6 +8,7 @@ import data.parsers.HttpResponseParser;
 import exceptions.MessageParsingException;
 import handlers.TransferEncodingHandlers;
 
+import java.net.SocketException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -34,14 +35,17 @@ public class ClientCache {
         return cacheIndex.containsKey(resource);
     }
 
-    public Optional<HttpResponse> process(HttpRequest request, InputStream in, OutputStream out) throws IOException, MessageParsingException {
-        boolean should_cache = false;
-        var resource = request.getPath();
+    public Optional<HttpResponse> process(HttpRequest request,LazySocket lazySocket) throws IOException, MessageParsingException {
+        InputStream  in;
+        OutputStream out;
+
+        var          resource     = request.getPath();
+        boolean      should_cache = false;
         Optional<String> hostOption = request.lookup("host");
-        if(hostOption.isPresent()) resource += "/" + hostOption.get();
-        if (request.getVerb().equals(HttpVerb.GET)){
+        if(hostOption.isPresent()) resource =  hostOption.get()+resource;
+        if (request.getVerb().equals(HttpVerb.GET)) {
             if (cacheIndex.containsKey(resource)) {
-                var res     =  cacheIndex.get(resource);
+                var response     =  cacheIndex.get(resource);
                 var tempOut = new OutputStream() {
                         private final StringBuilder string = new StringBuilder();
                         @Override
@@ -52,14 +56,30 @@ public class ClientCache {
                         }
                         public String toString() { return this.string.toString();}
                     };
-                res.send(tempOut);
-                in =  new ByteArrayInputStream(tempOut.toString().getBytes());
-                logger.log(Level.INFO,String.format("Cache HIT: %s",resource));
+                response.send(tempOut);
+                in          =  new ByteArrayInputStream(tempOut.toString().getBytes());
+                logger.log(Level.INFO,String.format("<Cache HIT> %s",resource));
             } else {
                 should_cache = true;
-                request.send(out);
+                var socket = lazySocket.get();
+                if (socket.isPresent()){
+                    in = socket.get().getInputStream();
+                    out = socket.get().getOutputStream();
+                    request.send(out);
+                } else {
+                    throw new SocketException(String.format("Could not establish a connection with %s",lazySocket.getSocketAddress()));
+                }
             }
-        } else request.send(out);
+        } else {
+            var socket = lazySocket.get();
+            if (socket.isPresent()){
+                in = socket.get().getInputStream();
+                out = socket.get().getOutputStream();
+                request.send(out);
+            }else {
+                throw new SocketException(String.format("Could not establish a connection with %s",lazySocket.getSocketAddress()));
+            }
+        }
         var response = getResponse(in, request);
         if ( should_cache && response.isPresent() &&
                 response.get().getStatusCode() == 200 &&
@@ -89,13 +109,13 @@ public class ClientCache {
         if (transferEncodingOptional.isEmpty()) {
             if (contentLengthOptional.isEmpty())
                 throw new MissingFormatArgumentException("Headers don't include Content-Length.");
-            if (contentTypeOptional.isEmpty())
-                throw new MissingFormatArgumentException("Headers don't include Content-Type.");
+
             int contentLength;
             try   {contentLength = Integer.parseInt(contentLengthOptional.get());}
-            catch (NumberFormatException e) {
-                throw new NumberFormatException("Malformed Content-Length.");
-            }
+            catch (NumberFormatException e) {throw new NumberFormatException("Malformed Content-Length.");}
+
+            if (contentTypeOptional.isEmpty() && contentLength > 0 )
+                throw new MissingFormatArgumentException("Headers don't include Content-Type.");
             body = in.readNBytes(contentLength);
         } else {
             var transferEncoding = transferEncodingOptional.get();

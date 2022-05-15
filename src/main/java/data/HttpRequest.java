@@ -1,6 +1,7 @@
 package data;
 
 import caching.ClientCache;
+import caching.LazySocket;
 import exceptions.MessageParsingException;
 
 import java.io.IOException;
@@ -65,8 +66,8 @@ public class HttpRequest {
             out.write(body);
     }
 
-    public Optional<HttpResponse> send(ClientCache cache, InputStream in, OutputStream out) throws IOException, MessageParsingException {
-        return cache.process(this,in,out);
+    public Optional<HttpResponse> send(ClientCache cache, LazySocket socket) throws IOException, MessageParsingException {
+        return cache.process(this,socket);
     }
 
 

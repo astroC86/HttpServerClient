@@ -44,7 +44,7 @@ public class FileServerThread extends Thread {
     private final Logger logger;
     private final Runnable callback;
     private Supplier<Integer> timeoutSupplier;
-    private PriorityBlockingQueue<Pair<HttpResponse, Integer>> queue = new PriorityBlockingQueue<>(1, Comparator.comparingInt(o -> o.y));
+    private PriorityBlockingQueue<Pair<HttpResponse, Integer>> queue = new PriorityBlockingQueue<>(1, Comparator.comparingInt(o -> o._1));
 
     FileServerThread(Socket clientSocket, String threadName, Runnable callback, Supplier<Integer> timeoutSupplier) {
         this.clientSocket = clientSocket;
@@ -71,7 +71,7 @@ public class FileServerThread extends Thread {
                     Pair<HttpResponse, Integer> responsePair = queue.poll();
                     if (responsePair != null) {
                         try {
-                            HttpResponse response = responsePair.x;
+                            HttpResponse response = responsePair._0;
                             if (response == null) {
                                 clientSocket.close();
                                 return;
@@ -91,7 +91,8 @@ public class FileServerThread extends Thread {
             while (persisting) {
                 ArrayList<String> lines = new ArrayList<>();
                 while (true) {
-                    clientSocket.setSoTimeout(timeoutSupplier.get()); // SocketTimeoutException <: IOException
+                    //timeoutSupplier.get()
+                    clientSocket.setSoTimeout(10000000); // SocketTimeoutException <: IOException
                     String line = readLine(in);
                     if (line == null) return; // end of stream
                     if (line.isEmpty()) break; //RFC 2616 dictates that nothing precedes CRLF
