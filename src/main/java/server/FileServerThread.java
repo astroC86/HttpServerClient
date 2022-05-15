@@ -150,8 +150,20 @@ public class FileServerThread extends Thread {
                     new Thread(() -> {
                         try {
                             handleGET(parsedMessage, binaryOut, responseNo);
+                        } catch (FileNotFoundException | FileCreationException |
+                                 FileRetrievalException | MissingFormatArgumentException |
+                                 NumberFormatException e) {
+                            int statusCode;
+                            if (e instanceof FileNotFoundException) statusCode = 404;
+                            else if (e instanceof FileCreationException || e instanceof FileRetrievalException) statusCode = 500;
+                            else statusCode = 400;
+                            var response = preparePrelude(HttpVersion.HTTP_1_1)
+                                    .withBody(MIMEType.PLAINTEXT, (e.getMessage() + "\r\n").getBytes())
+                                    .withResponseCode(statusCode)
+                                    .build();
+                            queue.add(new Pair<>(response, responseNo));
                         } catch (IOException e) {
-                            e.printStackTrace();
+                            throw new RuntimeException(e);
                         }
                     }).start();
                 } else handleGET(parsedMessage, binaryOut, responseNo);
@@ -268,7 +280,7 @@ public class FileServerThread extends Thread {
                 .withBody(type, data)
                 .build();
 
-        queue.add(new Pair(response, responseNo));
+        queue.add(new Pair<>(response, responseNo));
     }
 
     private HttpResponseBuilder preparePrelude(HttpVersion version) {
