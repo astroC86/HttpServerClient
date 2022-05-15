@@ -67,8 +67,10 @@ public class FileServerThread extends Thread {
             OutputStream binaryOut = clientSocket.getOutputStream();
 
             Thread queueThread = new Thread(() -> {
+                int currentResponseNo = 0;
                 while (true) {
-                    Pair<HttpResponse, Integer> responsePair = queue.poll();
+                    if (queue.isEmpty() || (queue.peek()._1 != currentResponseNo && queue.peek()._1 != Integer.MAX_VALUE)) continue;
+                    currentResponseNo++;
                     if (responsePair != null) {
                         try {
                             HttpResponse response = responsePair._0;
