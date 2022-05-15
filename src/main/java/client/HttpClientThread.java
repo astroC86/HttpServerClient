@@ -7,6 +7,7 @@ import exceptions.MessageParsingException;
 
 import java.io.IOException;
 import java.net.ConnectException;
+import java.net.SocketException;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -38,10 +39,6 @@ public class HttpClientThread {
                 executor.execute(host,port,req);
             } catch (MessageParsingException e) {
                 logger.log(Level.SEVERE, String.format("<Parse Error> Failed to parse response for request:\n%s",req));
-            } catch( ConnectException e){
-                logger.log(Level.SEVERE, String.format("<Connection refused> Host %s refused to connect.", host+":"+port));
-            }catch (IOException e){
-                e.printStackTrace();
             }
         }
         this.executor.dispose();
