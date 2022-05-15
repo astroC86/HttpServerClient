@@ -92,10 +92,10 @@ public class HttpResponse {
     @Override
     public String toString() {
         return "HTTP Response {" +
-                "status='{" + statusCode + ",'"+statusMessage+"'}" +
-                ", headers=" + headers +
-                ",HTTP/" + getMajorVersion() +
+                "HTTP/" + getMajorVersion() +
                 "." + getMinorVersion() +
+                ", status='{" + statusCode + ",'"+statusMessage+"'}" +
+                ", headers=" + headers +
                 '}';
     }
 }

@@ -26,6 +26,7 @@ public class HttpClientThread {
         while (!requests.isEmpty()){
             var top = requests.poll();
             var req = top._0;
+            logger.log(Level.INFO, "<Sending>:\n"+req);
             var hostOptional = req.lookup("Host");
             if (hostOptional.isEmpty()){
                 logger.log(Level.SEVERE, "Invalid Request, Host not defined.");

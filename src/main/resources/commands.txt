@@ -1,6 +1,5 @@
-/POST index.html 127.0.0.1 80
-/GET index.html 127.0.0.1 80
-/GET z.txt 127.0.0.1 80
-/GET z.txt 127.0.0.1 80
-/GET /hypertext/WWW/TheProject.html info.cern.ch
-GET / google.com 80
+GET /some_text_file2.txt 127.0.0.1 80
+GET /some_text_file.txt 127.0.0.1
+GET /some_text_file.txt 127.0.0.1
+POST /index.html 127.0.0.1 80
+GET /hypertext/WWW/TheProject.html info.cern.ch

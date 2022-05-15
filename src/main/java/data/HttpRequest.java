@@ -113,11 +113,11 @@ public class HttpRequest {
 
     @Override
     public String toString() {
-        return "ParsedMessage{" +
-                "path='" + path + '\'' +
+        return "HTTP Request{" +
+                "HTTP/" + getMajorVersion() +
+                "." + getMinorVersion() +
+                ", path='" + path + '\'' +
                 ", headers=" + headers +
-                ", majorVersion=" + majorVersion +
-                ", minorVersion=" + minorVersion +
                 ", verb=" + verb +
                 '}';
     }
