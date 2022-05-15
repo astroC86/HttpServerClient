@@ -71,6 +71,7 @@ public class FileServerThread extends Thread {
                 while (true) {
                     if (queue.isEmpty() || (queue.peek()._1 != currentResponseNo && queue.peek()._1 != Integer.MAX_VALUE)) continue;
                     currentResponseNo++;
+                    Pair<HttpResponse, Integer> responsePair = queue.poll();
                     if (responsePair != null) {
                         try {
                             HttpResponse response = responsePair._0;
