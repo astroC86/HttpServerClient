@@ -34,6 +34,7 @@ public class HttpResponseExecutor {
                    socket.close();
                 }
             }
+            logger.log(Level.INFO,"<Received>:\n"+response);
         }
         return responseOptional;
     }

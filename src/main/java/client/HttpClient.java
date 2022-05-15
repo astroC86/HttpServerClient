@@ -25,7 +25,7 @@ public class HttpClient {
     private static final Pattern linePattern = Pattern.compile(
                                                     "^(?<verb>POST|GET)" +
                                                             "(?:\\s+)" +
-                                                            "(?:(?:(?<identity>\\/)(?:[^\\w]+))|(?:(?<fname>.*?)(?:\\.(?<ext>[^.]\\w+))))"+
+                                                            "(?:(?:(?<identity>\\/)(?:[^\\w]*))|(?:(?<fname>.*?)(?:\\.(?<ext>[^.]\\w+))))"+
                                                             "(?:\\s+)" +
                                                             "(?<hostname>(?:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|" +
                                                                         "(?:(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)+(?:[A-Za-z]|[A-Za-z][A-Za-z0-9\\-]*[A-Za-z0-9])))" +
@@ -50,29 +50,37 @@ public class HttpClient {
                 var matcher  = linePattern.matcher(line);
                 if (matcher.matches()) {
                     var verb  = HttpVerb.valueOf(matcher.group("verb"));
+                    var identitiy = matcher.group("identity");
                     var fname = matcher.group("fname");
                     var ext   = matcher.group("ext");
-                    if (ext != null){
-                        if (!typeExtension.inverse().containsKey(ext)) {
-                            System.err.println("Line "+line+": Extension(" + ext + ") is not supported. Acceptable extensions: " +
-                                    String.join(",", typeExtension.keySet()) + ".");
-                            continue;
+                    if(identitiy==null){
+                        if (ext != null){
+                            if (!typeExtension.inverse().containsKey(ext)) {
+                                System.err.println("Line "+line+": Extension(" + ext + ") is not supported. Acceptable extensions: " +
+                                        String.join(",", typeExtension.keySet()) + ".");
+                                continue;
+                            }
+                            if(!fname.startsWith("/")) fname = "/" + fname;
+                        } else {
+                            if (verb == HttpVerb.POST){
+                                System.err.printf("Line %d: Extension missing from file (%s).",lineCount,fname);
+                                continue;
+                            }
                         }
-                        if(!fname.startsWith("/")) fname = "/" + fname;
-                    } else {
-                        if (verb == HttpVerb.POST){
-                            System.err.printf("Line %d: Extension missing from file (%s).",lineCount,fname);
-                            continue;
-                        }
+                        fname = fname +"."+ext;
+                    }else{
+                        fname = identitiy;
                     }
-                    fname = fname +"."+ext;
                     var host = matcher.group("hostname").toLowerCase();
                     int port = 80;
                     if(matcher.group("port")!=null)
                          port = Integer.parseInt(matcher.group("port"));
-                    if (verb == HttpVerb.GET)
-                        requestsq.add( new Pair<>(generateGetRequest(fname,URI.create(host),BodyHandlers.ofFile.apply(fname)), port));
-                    else {
+                    if (verb == HttpVerb.GET) {
+                        if(!fname.equals("/"))
+                            requestsq.add(new Pair<>(generateGetRequest(fname, URI.create(host), BodyHandlers.ofFile.apply(fname)), port));
+                        else
+                            requestsq.add(new Pair<>(generateGetRequest(fname, URI.create(host), BodyHandlers.ofFile.apply(fname+host+".html")), port));
+                    } else {
                         if(new File("./client_content/"+fname).exists()){
                             requestsq.add(new Pair<>(generatePostRequest(fname,ext,URI.create(host)),port));
                         } else {

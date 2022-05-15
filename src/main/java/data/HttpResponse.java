@@ -11,12 +11,12 @@ import java.util.stream.Collectors;
 
 public class HttpResponse {
     private final String CLRF = "\r\n";
-    private int minor;
-    private int major;
+    private final int minor;
+    private final int major;
     private byte[] body;
-    private int statusCode;
-    private String statusMessage;
-    private Map<String,String> headers;
+    private final int statusCode;
+    private final String statusMessage;
+    private final Map<String,String> headers;
 
     public HttpResponse(int major,int minor, int statusCode, String statusMessage, Map<String, String> headers) {
         this.major = major;
@@ -88,4 +88,14 @@ public class HttpResponse {
     }
 
     public Map<String,String> cloneHeaders(){return Map.copyOf(headers);}
+
+    @Override
+    public String toString() {
+        return "HTTP Response {" +
+                "status='{" + statusCode + ",'"+statusMessage+"'}" +
+                ", headers=" + headers +
+                ",HTTP/" + getMajorVersion() +
+                "." + getMinorVersion() +
+                '}';
+    }
 }
