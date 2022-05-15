@@ -91,8 +91,7 @@ public class FileServerThread extends Thread {
             while (persisting) {
                 ArrayList<String> lines = new ArrayList<>();
                 while (true) {
-                    //timeoutSupplier.get()
-                    clientSocket.setSoTimeout(10000000); // SocketTimeoutException <: IOException
+                    clientSocket.setSoTimeout(timeoutSupplier.get()); // SocketTimeoutException <: IOException
                     String line = readLine(in);
                     if (line == null) return; // end of stream
                     if (line.isEmpty()) break; //RFC 2616 dictates that nothing precedes CRLF
