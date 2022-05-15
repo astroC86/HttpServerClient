@@ -1,7 +1,7 @@
 ## Build
 
 ```bash
-chmox +x ./gradlew
+chmod +x ./gradlew
 ./gradlew build
 ```
 

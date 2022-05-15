@@ -16,7 +16,7 @@ public class Heuristic implements Supplier<Integer> {
 
     @Override
     public Integer get() {
-         var utilization = (threshold - count.get()) * 1.0 / threshold;
+         var utilization = count.get() * 1.0 / threshold;
          return (int) (Math.max(0, 1 - utilization) * maxTimeoutMillis);
     }
 }
