@@ -51,6 +51,7 @@ public class HttpResponseExecutor {
             } catch (IOException ex) {
                 logger.log(Level.SEVERE,"Failed to close persist.");
             }
+            e.printStackTrace();
         }
         return Optional.empty();
     }

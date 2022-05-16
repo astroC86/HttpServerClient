@@ -1,5 +1,3 @@
-/GET /some_text_file2.txt 127.0.0.1 80
-GET /some_text_file.txt 127.0.0.1
-GET /some_text_file2323232.txt 127.0.0.1
-GET /index.html 127.0.0.1 80
-/GET /hypertext/WWW/TheProject.html info.cern.ch
+/GET /some_text_file.txt 127.0.0.1 80
+/POST /lena.png 127.0.0.1 80
+GET some_text12.png 127.0.0.1 80

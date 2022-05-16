@@ -132,7 +132,7 @@ public class ClientCache {
                 throw new RuntimeException("Unsupported Transfer-Encoding Value");
             }
         }
-        if (body.length != 0) {
+        if (body.length != 0 && parsedResponse.getStatusCode() == 200) {
             for (var bh: request.getBodyHandlers()){
                 //noinspection unchecked
                 bh.apply(body);

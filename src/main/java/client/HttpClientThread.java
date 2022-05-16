@@ -5,9 +5,6 @@ import collections.Pair;
 import data.HttpRequest;
 import exceptions.MessageParsingException;
 
-import java.io.IOException;
-import java.net.ConnectException;
-import java.net.SocketException;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
